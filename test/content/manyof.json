@@ -1,0 +1,75 @@
+[{
+  "identical_expressions": [{
+    "add": [{
+      "add": [{
+        "value": 1
+      }, {
+        "value": 2
+      }]
+    }, {
+      "mul": [{
+        "value": 3
+      }, {
+        "value": 4
+      }]
+    }, {
+      "neg": {
+        "div": [{
+          "value": 56
+        }, {
+          "value": 7
+        }]
+      }
+    }]
+  }, {
+    "add": [{
+      "add": [{
+        "value": 1
+      }, {
+        "value": 2
+      }]
+    }, {
+      "mul": [{
+        "value": 3
+      }, {
+        "value": 4
+      }]
+    }, {
+      "neg": {
+        "div": [{
+          "value": 56
+        }, {
+          "value": 7
+        }]
+      }
+    }]
+  }, {
+    "add": [{
+      "add": [{
+        "value": 1
+      }, {
+        "value": 2
+      }]
+    }, {
+      "mul": [{
+        "value": 3
+      }, {
+        "value": 4
+      }]
+    }, {
+      "neg": {
+        "div": [{
+          "value": 56
+        }, {
+          "value": 7
+        }]
+      }
+    }]
+  }]
+}, {
+  "empty_manyof": []
+}, {
+  "another_empty_manyof": []
+}, {
+  "empty_message": {}
+}]

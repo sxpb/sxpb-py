@@ -1,0 +1,18 @@
+(quoted_1 "AA BB CC")
+(quoted_2 "AA B" "B CC")
+(quotemix_1 "1 " 2 " 3")
+(quotemix_2 "" 1 2 3)
+(unquoted_1 AA BB CC)
+(unquoted_2
+ Unquoted
+ string 2.
+)
+(array_mix_1 (()) unquoted string array)
+(array_mix_2 (()) "1" 2 3)
+(multiline_1 """\
+1
+"2"
+3
+""" "4")
+; There is no unquoted version.
+(empty_string "")

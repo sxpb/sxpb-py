@@ -1,0 +1,42 @@
+; The toplevel structure is an array, specifically a manyof.
+; This is not supported in Protobuf, so the toplevel array in manyof.txtpb
+; would need a field name in order to be valid.
+(())
+
+((identical_expressions)
+ ; Expression representing 1+2 + 3*4 - 56/7.
+ ((add)
+  ((add) 1 2)
+  ((mul) 3 4)
+  (neg ((div) 56 7))
+ )
+ ; Literals are implicitly fields named "value".
+ (add (())
+  (add (()) (value 1) (value 2))
+  (mul (()) (value 3) (value 4))
+  (neg (div (()) (value 56) (value 7)))
+ )
+ ; The manyof expands to an array of single-field messages.
+ (add (())
+  (()
+   (add (())
+    (() (value 1))
+    (() (value 2))
+  ))
+  (()
+   (mul (())
+    (() (value 3))
+    (() (value 4))
+  ))
+  (()
+   (neg
+    (div (())
+     (() (value 56))
+     (() (value 7))
+  )))
+ )
+)
+
+((empty_manyof))
+(another_empty_manyof (()))
+(empty_message)

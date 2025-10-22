@@ -1,0 +1,21 @@
+; An array of integers.
+(my_integers (()) 1 2 3)
+
+; An array of floats.
+(my_floats (()) 1. 10.e1 .001)
+
+; An array of strings.
+(my_strings (()) "yo" "howdy" "moin")
+
+; Additional strings appended to above.
+(my_strings (()) "ciao")
+(my_strings (()) "adios" "farewell")
+
+; An array of 3 messages.
+(my_messages (())
+ (() (i 5))
+ ()
+ (() (i 5) (f 5.5) (s "hello")))
+
+; An empty array.
+(my_empty_array (()))
