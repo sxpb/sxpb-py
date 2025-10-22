@@ -1,0 +1,20 @@
+# SxPB Python Library
+
+## Setup
+
+### PDM Prereq
+
+Install `pdm` on your machine via `apt install pdm`.
+Then install package dependencies for this project, omitting the ones needed for development (see [CONTRIBUTING.md](CONTRIBUTING.md) for that).
+
+```shell
+pdm install --prod
+```
+
+If `pdm` is not available directly, then try installing `uv` like `apk add uv` and set up the environment.
+You'll have to run `pdm` as `uv tool run pdm`.
+
+```shell
+uv venv .venv
+uv pip install pdm --prod
+uv tool run pdm install

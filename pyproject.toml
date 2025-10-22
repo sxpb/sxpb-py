@@ -1,0 +1,31 @@
+[project]
+name = "sxpb-py"
+version = "0.0.0"
+authors = [
+]
+dependencies = [
+]
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["pdm-pep517>=1.0.0"]
+build-backend = "pdm.pep517.api"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "ruff>=0.7.3",
+    "ty>=0.0.1a22",
+]
+
+[tool.pytest.ini_options]
+addopts = "--showlocals"
+pythonpath = ["."]
+
+
+[tool.pdm.scripts]
+check-format = "ruff check"
+check-type = "ty check"
+tidy = "ruff format"
+lint = {composite = ["check-format", "check-type"]}
+test = "pytest"
