@@ -1,4 +1,6 @@
-# SxPB Python Library
+# sxpb-py
+
+A small schema-agnostic parser and serializer for `.sxpb` files (S-expression protobuf data).
 
 ## Setup
 
@@ -16,5 +18,6 @@ You'll have to run `pdm` as `uv tool run pdm`.
 
 ```shell
 uv venv .venv
-uv pip install pdm --prod
-uv tool run pdm install
+uv pip install pdm
+uv tool run pdm install --prod
+```

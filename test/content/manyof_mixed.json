@@ -1,0 +1,22 @@
+{
+  "and": [
+    { "value": true },
+    {
+      "or": [
+        { "value": false },
+        { "value": true }
+      ]
+    },
+    {
+      "eq": [
+        {
+          "add": [
+            { "value": 9 },
+            { "value": 10 }
+          ]
+        },
+        { "value": 21 }
+      ]
+    }
+  ]
+}

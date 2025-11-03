@@ -1,0 +1,45 @@
+?start: message_body | array_body | manyof_body
+
+any_field: regular_field | loneof_field | manyof_field
+message_body: any_field*
+
+regular_field: "(" field_name (scalar_body | message_body | array_body) ")"
+loneof_field:  "(" loneof_name (scalar_body | message_body | array_body) ")"
+manyof_field: "(" ( field_name manyof_body | "(" field_name ")" (manyof_item | any_field)* ) ")"
+
+loneof_name: "(" field_name field_name ")"
+
+scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
+string_body: (ESCAPED_STRING | MULTILINE_STRING | BARE) (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
+
+array_body: "(())" (unnamed_message_field* | SIGNED_NUMBER* | BOOLEAN* | string_array)
+string_array: (ESCAPED_STRING | MULTILINE_STRING | BARE | PLAIN | unquoted_array_string)*
+unquoted_array_string: "(" "\"\"" (ESCAPED_STRING | MULTILINE_STRING | PLAIN)+ ")"
+
+manyof_body: "(())" any_field*
+
+unnamed_message_field: "(" empty_message message_body ")" | empty_message
+
+empty_message: "(" ")"
+
+manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN
+
+field_name: BARE | NONEMPTY_ESCAPED_STRING
+
+BOOLEAN: /\+true|\+false/
+
+SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?/
+BARE: /(([-.]?[^-+.0123456789 \t\n\v\f\r;"()])|--|\.\.)([^ \t\n\v\f\r;"()]*)/
+PLAIN: /[^ \t\n\v\f\r;"()]+/
+
+NONEMPTY_ESCAPED_STRING: /"(\\.|[^"\\])+"/
+
+MULTILINE_STRING: /"""(.|\n)*?"""/
+
+LISP_COMMENT: ";" /[^\n]*/
+
+%import common.ESCAPED_STRING
+%import common.WS
+
+%ignore WS
+%ignore LISP_COMMENT

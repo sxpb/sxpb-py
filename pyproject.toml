@@ -1,27 +1,45 @@
 [project]
-name = "sxpb-py"
-version = "0.0.0"
+name = "sxpb"
+version = "0.0.1"
+description = "S-expression protobuf data."
+readme = "README.md"
+license = { text = "0BSD" }
 authors = [
+  { name = "Alex Klinkhamer", email = "about.sxpb@grencez.dev" }
 ]
+requires-python = ">=3.9"
 dependencies = [
+    "lark>=1.2.2",
 ]
-requires-python = ">=3.11"
+
+[project.urls]
+Homepage = "https://github.com/sxpb/sxpb-py"
+Repository = "https://github.com/sxpb/sxpb-py"
+Issues = "https://github.com/sxpb/sxpb-py/issues"
 
 [build-system]
-requires = ["pdm-pep517>=1.0.0"]
-build-backend = "pdm.pep517.api"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pytest.ini_options]
+addopts = "-v"
+pythonpath = ["src"]
+testpaths = ["test"]
+
+[project.scripts]
+sxpb2json = "sxpb.sxpb2json_main:main"
+json2sxpb = "sxpb.json2sxpb_main:main"
+sxpb2xml = "sxpb.sxpb2xml_main:main"
+
+[tool.pdm]
+package-dir = "src"
 
 [tool.pdm.dev-dependencies]
 dev = [
-    "pytest>=8.3.3",
-    "ruff>=0.7.3",
-    "ty>=0.0.1a22",
+  "pytest",
+  "ruff",
+  "ty",
 ]
-
-[tool.pytest.ini_options]
-addopts = "--showlocals"
-pythonpath = ["."]
-
 
 [tool.pdm.scripts]
 check-format = "ruff check"
@@ -29,3 +47,4 @@ check-type = "ty check"
 tidy = "ruff format"
 lint = {composite = ["check-format", "check-type"]}
 test = "pytest"
+

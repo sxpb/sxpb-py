@@ -1,0 +1,6 @@
+(a 1)
+(b "hello")
+(c +true)
+(d 1.23)
+(e "")
+(f (()) "hello" "world")
