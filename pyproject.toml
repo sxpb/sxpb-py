@@ -23,12 +23,13 @@ build-backend = "pdm.backend"
 
 [tool.pytest.ini_options]
 addopts = "-v"
-pythonpath = ["src"]
+pythonpath = ["src", "test"]
 testpaths = ["test"]
 
 [project.scripts]
-sxpb2json = "sxpb.sxpb2json_main:main"
 json2sxpb = "sxpb.json2sxpb_main:main"
+sxpb2json = "sxpb.sxpb2json_main:main"
+sxpb2sxpb = "sxpb.sxpb2sxpb_main:main"
 sxpb2xml = "sxpb.sxpb2xml_main:main"
 
 [tool.pdm]
@@ -48,3 +49,5 @@ tidy = "ruff format"
 lint = {composite = ["check-format", "check-type"]}
 test = "pytest"
 
+[tool.ty.environment]
+root = ["src", "test"]
