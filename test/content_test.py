@@ -23,7 +23,7 @@ def test_sxpb_files_can_be_parsed_as_expected(name):
     sxpb_path = CONTENT_DIR / f"{name}.sxpb"
     json_path = CONTENT_DIR / f"{name}.json"
 
-    sxpb_data = sxpb.load(sxpb_path)
+    sxpb_data = sxpb.load(str(sxpb_path))
     json_data = json.loads(json_path.read_text())
 
     assert to_plain_types(sxpb_data) == json_data

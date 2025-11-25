@@ -8,7 +8,10 @@ def test_pumpkin_xml_serialization():
     sxpb_path = CONTENT_DIR / "pumpkin.sxpb"
     svg_path = CONTENT_DIR / "pumpkin.svg"
 
-    sxpb_data = sxpb.load(sxpb_path)
+    sxpb_data = sxpb.load(str(sxpb_path), precise=True)
+    from sxpb.types import SxpbDict
+
+    assert isinstance(sxpb_data, SxpbDict)
     xml_output = sxpb.to_xml(sxpb_data)
 
     expected_svg = svg_path.read_text()

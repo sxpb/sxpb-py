@@ -12,14 +12,14 @@ def test_loads_and_dumps_roundtrip():
         )
     """)
     example = s.strip()
-    data = sxpb.loads(example)
+    data = sxpb.loads(example, precise=True)
     text = sxpb.dumps(data)
     assert text == example
 
 
 def test_simple_roundtrip():
     example = "(key value)"
-    data = sxpb.loads(example)
+    data = sxpb.loads(example, precise=True)
     text = sxpb.dumps(data)
     assert text == example
 
@@ -37,7 +37,7 @@ def test_simple_content_roundtrip():
         )
     """)
     example = s.strip()
-    data = sxpb.loads(example)
+    data = sxpb.loads(example, precise=True)
     text = sxpb.dumps(data)
     assert text == example
 
@@ -51,7 +51,7 @@ def test_loneof_content_roundtrip():
         )
     """)
     example = s.strip()
-    data = sxpb.loads(example)
+    data = sxpb.loads(example, precise=True)
     text = sxpb.dumps(data)
     assert text == example
 
@@ -105,6 +105,6 @@ def test_manyof_content_roundtrip():
         (empty_message)
     """)
     example = s.strip()
-    data = sxpb.loads(example)
+    data = sxpb.loads(example, precise=True)
     text = sxpb.dumps(data)
     assert text == example

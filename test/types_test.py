@@ -26,23 +26,23 @@ def test_to_dict_and_to_list():
     assert not isinstance(plain_data["f"], SxpbMany)
 
 
-def test_loads_builtin_only():
+def test_loads_precise():
     sxpb_string = """
     (a (b 1))
     (c (()) 2 3)
     """
 
-    # Test with builtin_only=False (default)
-    sxpb_data = loads(sxpb_string)
-    assert isinstance(sxpb_data, SxpbDict)
-    assert isinstance(sxpb_data["a"], SxpbDict)
-    assert isinstance(sxpb_data["c"], SxpbList)
-
-    # Test with builtin_only=True
-    plain_data = loads(sxpb_string, builtin_only=True)
+    # Test with precise=False (default)
+    plain_data = loads(sxpb_string)
     assert isinstance(plain_data, dict)
     assert not isinstance(plain_data, SxpbDict)
     assert isinstance(plain_data["a"], dict)
     assert not isinstance(plain_data["a"], SxpbDict)
     assert isinstance(plain_data["c"], list)
     assert not isinstance(plain_data["c"], SxpbList)
+
+    # Test with precise=True
+    sxpb_data = loads(sxpb_string, precise=True)
+    assert isinstance(sxpb_data, SxpbDict)
+    assert isinstance(sxpb_data["a"], SxpbDict)
+    assert isinstance(sxpb_data["c"], SxpbList)

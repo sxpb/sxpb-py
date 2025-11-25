@@ -177,14 +177,14 @@ class SexpTransformer(Transformer):
 sxpb_parser = Lark(GRAMMAR, start="start", import_paths=[LARK_GRAMMAR_PATH])
 
 
-def loads(text: str, builtin_only: bool = False) -> Json:
+def loads(text: str, precise: bool = False) -> Json:
     tree = sxpb_parser.parse(text)
     data = SexpTransformer().transform(tree)
-    if builtin_only:
+    if not precise:
         return to_plain_types(data)
     return data
 
 
-def load(path: str, builtin_only: bool = False) -> Json:
+def load(path: str, precise: bool = False) -> Json:
     with open(path, "r", encoding="utf-8") as f:
-        return loads(f.read(), builtin_only=builtin_only)
+        return loads(f.read(), precise=precise)
