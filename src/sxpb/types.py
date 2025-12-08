@@ -27,3 +27,7 @@ class SxpbLone(UserDict):
 class SxpbMany(UserList):
     def to_list(self):
         return [_to_plain_type(v) for v in self]
+
+
+class SxpbNest(SxpbDict):
+    pass

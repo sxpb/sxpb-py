@@ -1,0 +1,27 @@
+{
+  "black bear": {
+    "color": {
+      "cinnamon": null
+    },
+    "clawing at the bark of a Douglas fir": null
+  },
+  "grizzly bear": {
+    "foraging for honeyberries": null
+  },
+  "meadow": {
+    "grass": {
+      "green": null,
+      "verdant": null,
+      "swaying": {
+        "gently in the breeze": null
+      }
+    },
+    "wildflowers": {
+      "blooming": null,
+      "fragrance": {
+        "sweet": null,
+        "subtle": null
+      }
+    }
+  }
+}

@@ -28,7 +28,7 @@ def main():
     parser.add_argument(
         "--indent",
         type=int,
-        default=2,
+        default=1,
         help="Indentation level for Sxpb output",
     )
     parser.add_argument(
@@ -41,7 +41,7 @@ def main():
     sxpb_content = args.infile.read()
 
     try:
-        sxpb_data = loads(sxpb_content)
+        sxpb_data = loads(sxpb_content, precise=True)
         if not args.validate_only:
             formatted_sxpb = dumps(sxpb_data, indent=args.indent)
             args.outfile.write(formatted_sxpb)

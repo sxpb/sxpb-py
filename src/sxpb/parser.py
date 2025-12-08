@@ -1,5 +1,6 @@
 import re
 import textwrap
+import json
 from collections import UserList
 from pathlib import Path
 from typing import Any, Dict, List, Union
@@ -8,10 +9,10 @@ import lark
 from lark import Lark, Token, Transformer, v_args
 
 from .jsonutil import to_plain_types
-from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany
+from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbNest
 
 GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
-LARK_GRAMMAR_PATH = str(Path(lark.__file__).parent / "grammars")
+LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
 NUM_INT = re.compile(r"^[+-]?\d+$")
 NUM_FLOAT = re.compile(r"^[+-]?(?:\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$")
 
@@ -42,10 +43,12 @@ class SexpTransformer(Transformer):
         return n.value
 
     def NONEMPTY_ESCAPED_STRING(self, s):
-        return s.value[1:-1]
+        # Uses json.loads to properly unescape string
+        return json.loads(s.value)
 
     def ESCAPED_STRING(self, s):
-        return s.value[1:-1]
+        # Uses json.loads to properly unescape string
+        return json.loads(s.value)
 
     def MULTILINE_STRING(self, s):
         val = s.value[3:-3]
@@ -121,8 +124,9 @@ class SexpTransformer(Transformer):
         if not body:
             return name, SxpbMany()
 
-        # `body` can be a list from manyof_body, or a Token from atom+, or a tuple from any_field*
-        if isinstance(body[0], SxpbMany):  # manyof_body
+        # `body` can be a list from discriminated_manyof (result is SxpbMany),
+        # or a Token from atom+, or a tuple from any_field*
+        if isinstance(body[0], SxpbMany):  # discriminated_manyof
             return name, body[0]
 
         # The body is from (atom | any_field)*
@@ -137,7 +141,15 @@ class SexpTransformer(Transformer):
     def loneof_name(self, items):
         return items
 
-    def manyof_body(self, items):
+    def discriminated_manyof(self, items):
+        # items[0] might be LIST_DISCRIM if it's passed through
+        start_idx = 0
+        if items and isinstance(items[0], Token) and items[0].type == "LIST_DISCRIM":
+            start_idx = 1
+
+        # Filter out remaining items
+        items = items[start_idx:]
+
         return SxpbMany([SxpbLone({item[0]: item[1]}) for item in items])
 
     def any_field(self, items):
@@ -146,32 +158,90 @@ class SexpTransformer(Transformer):
     def empty_message(self, _):
         return SxpbDict()
 
-    def unnamed_message_field(self, items):
-        if len(items) == 2:
-            return items[1]
+    def anonymous_discriminated_message(self, items):
+        # items: [empty_message_result, message_body_result] -> [{}, dict]
+        return items[1]
+
+    def message_array_body(self, items):
+        # items: list of dicts (from empty_message or anonymous_discriminated_message)
+        return SxpbList(items)
+
+    def discriminated_string(self, items):
+        # items[0] is STRING_DISCRIM (marker)
+        # items[1:] is content
+        return self.string_body(items[1:])
+
+    def anonymous_discriminated_string(self, items):
+        # items[0] is the result of discriminated_string (which returns a string)
         return items[0]
 
-    def unquoted_array_string(self, items):
-        return " ".join(str(i) for i in items)
-
-    def string_array(self, items):
+    def string_array_body(self, items):
         # The transformer has already processed the terminal tokens into strings or UnquotedString objects.
         # Per the project's requirements, if any element in an array is a string, all elements are converted to strings.
-        # Since all children of the `string_array` rule are string-like, we just convert them all.
+        # Since all children of the `string_array_body` rule are string-like, we just convert them all.
         return SxpbList([str(item) for item in items])
 
+    def discriminated_array(self, items):
+        # items[0] is LIST_DISCRIM, items[1] is array_body result
+        return items[1]
+
     def array_body(self, items):
-        # The grammar rule for array_body is now `"(())" (unnamed_message_field* | SIGNED_NUMBER* | BOOLEAN* | string_array)`.
-        # The items will either be a list of messages, a list of numbers, a list of booleans, or a single SxpbList from string_array.
+        # The items will either be:
+        # 1. A single SxpbList from message_array_body
+        # 2. A single SxpbList from string_array_body
+        # 3. A list of numbers or booleans (directly in items)
+
         if items and isinstance(items[0], SxpbList):
-            # This is a string array that has been processed by string_array
+            # Case 1 or 2
             return items[0]
+
+        # Case 3 (or empty fallthrough)
         if items and isinstance(items[0], Token) and items[0].type == "SIGNED_NUMBER":
             return SxpbList([self.SIGNED_NUMBER(i) for i in items])
         if items and isinstance(items[0], Token) and items[0].type == "BOOLEAN":
             return SxpbList([self.BOOLEAN(i) for i in items])
-        # It's an array of messages or an empty array
+
+        # Fallback for empty array or heterogenous (if grammar allowed it, which it doesn't really)
+        # If empty, items is empty list here.
         return SxpbList(items)
+
+    def discriminated_nest(self, items):
+        # items: [NEST_DISCRIM, nest_body]
+        return items[-1]
+
+    def nest_body(self, items):
+        nest = SxpbNest()
+        for item in items:
+            # item is (key, value)
+            key, value = item
+            nest[key] = value
+        return nest
+
+    def nest_item(self, items):
+        # items[0] is the result of nest_key | nest_subfield | discriminated_string_field
+        return items[0]
+
+    @v_args(inline=True)
+    def nest_key(self, k):
+        # k can be UnquotedString (BARE) or str (ESCAPED_STRING etc)
+        # Returns (key, None) for leaf nodes per requirement
+        if isinstance(k, UnquotedString):
+            k = str(k)
+        # anonymous_discriminated_string logic returns joined string, passed as is
+        return k, None
+
+    def nest_subfield(self, items):
+        # items: [field_name, nest_body]
+        key = items[0]
+        body = items[1]
+        return key, body
+
+    def discriminated_string_field(self, items):
+        # items: [field_name, discriminated_string]
+        # discriminated_string already returns string
+        key = items[0]
+        content = items[1]
+        return key, SxpbNest({content: None})
 
 
 sxpb_parser = Lark(GRAMMAR, start="start", import_paths=[LARK_GRAMMAR_PATH])

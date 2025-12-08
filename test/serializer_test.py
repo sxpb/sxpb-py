@@ -40,13 +40,13 @@ def test_top_level_list_serialization():
     """Tests top-level list serialization with different indents."""
     data = [{"a": 1}, {"b": 2}]
     # Positive indent
-    expected_pretty = "(a 1)\n(b 2)"
+    expected_pretty = "(())\n(a 1)\n(b 2)"
     assert sxpb.dumps(data, indent=1) == expected_pretty
     # Zero indent
-    expected_zero = "(a 1) (b 2)"
+    expected_zero = "(()) (a 1) (b 2)"
     assert sxpb.dumps(data, indent=0) == expected_zero
     # Condensed indent
-    expected_condensed = "(a 1)(b 2)"
+    expected_condensed = "(())(a 1)(b 2)"
     assert sxpb.dumps(data, indent=-1) == expected_condensed
 
 

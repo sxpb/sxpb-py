@@ -3,11 +3,22 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from sxpb.types import SxpbLone, SxpbMany
+from sxpb.types import SxpbLone, SxpbMany, SxpbNest
 
 
 def dumps(obj: Any, indent: int = 1) -> str:
     """Serializes a Python object to an Sxpb string."""
+    if isinstance(obj, SxpbNest):
+        # Top-level Nest
+        body = _serialize_nest_body(obj, indent, 0)
+        if indent > 0:
+            if "\n" not in body:
+                return f'("")\n{body}'
+            else:
+                return f'("")\n{body}'
+        else:
+            return f'("") {body}'
+
     if isinstance(obj, Mapping):
         return _serialize_message_body(obj, indent, 0)
     if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
@@ -19,12 +30,12 @@ def dumps(obj: Any, indent: int = 1) -> str:
             parts.append(_serialize_message_body(item, indent, 0))
 
         if indent > 0:
-            return "\n".join(parts)
+            return "(())\n" + "\n".join(parts)
         if indent == 0:
-            return " ".join(parts)
+            return "(()) " + " ".join(parts)
 
         # indent < 0
-        return _join_condensed(parts)
+        return _join_condensed(["(())"] + parts)
 
     raise TypeError("Top-level object must be a message/dict or a list/array")
 
@@ -87,7 +98,9 @@ def _has_bare_prefix(s: str) -> bool:
     return bool(_BARE_PREFIX_RE.match(s))
 
 
-def _format_atom(v, in_array: bool = False):
+def _format_atom(
+    v, in_array: bool = False, in_nest_string: bool = False, is_key: bool = False
+):
     if isinstance(v, bool):
         return "+true" if v else "+false"
     if isinstance(v, (int, float)):
@@ -95,19 +108,180 @@ def _format_atom(v, in_array: bool = False):
     s = str(v)
     if not s:
         return '""'
+    if in_nest_string:
+        pass
+
+    # Keys cannot have spaces (unless quoted).
+    if is_key and " " in s:
+        return json.dumps(s, ensure_ascii=False)
+
     if in_array and " " in s:
         return json.dumps(s, ensure_ascii=False)
+
     if not _is_plain_string(s) or not _has_bare_prefix(s):
         return json.dumps(s, ensure_ascii=False)
     return s
+
+
+def _format_nest_string(s: str) -> str:
+    """Formats a string value for a nest field (after `""`)."""
+    if not s:
+        return ""  # empty string
+
+    parts = s.split(" ")
+    tokens = []
+
+    for part in parts:
+        is_bare = _is_plain_string(part) and _has_bare_prefix(part)
+        token = part if is_bare else json.dumps(part, ensure_ascii=False)
+        tokens.append((token, is_bare))
+
+    if not tokens:
+        return ""
+
+    result = []
+    for i, (token, is_bare) in enumerate(tokens):
+        if i > 0:
+            prev_token, prev_is_bare = tokens[i - 1]
+            if prev_is_bare and is_bare:
+                # Implicit space
+                pass
+            else:
+                # Explicit space
+                result.append('" "')
+        result.append(token)
+
+    return " ".join(result)
+
+
+def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
+    pad = " " * (indent * level) if indent > 0 else ""
+
+    # "a nest of 1 to 3 strings should stay on the same line, but any more or any subnests cause each to be on their own line"
+    # "strings" here means keys with None value (leaves).
+
+    all_strings = True
+    leaves = []
+
+    for key, value in nest.items():
+        if value is None:
+            leaves.append(key)
+        else:
+            all_strings = False
+            break
+
+    should_condense = all_strings and len(leaves) >= 1 and len(leaves) <= 3
+
+    parts = []
+    for key, value in nest.items():
+        # Handle formatting logic
+        formatted_entry = ""
+
+        # Determine if we should quote key or use ("" key) syntax for multi-word keys
+        # If value is None, we are flexible.
+
+        key_has_spaces = " " in key
+
+        if value is None:
+            if key_has_spaces:
+                # Use ("" key) syntax to allow bare words
+                formatted_key = _format_nest_string(key)
+                formatted_entry = f'("" {formatted_key})'
+            else:
+                # Use simple bare key (quoted if special chars)
+                formatted_entry = _format_atom(key, is_key=True)
+
+        elif isinstance(value, SxpbNest):
+            # Check for single-string optimization
+            # Optimization: If sub-nest has 1 key K, and value is None.
+            # If K has spaces, output (key "" K).
+            # If K is simple, output (key K).
+
+            sub_keys = list(value.keys())
+            if len(sub_keys) == 1 and value[sub_keys[0]] is None:
+                sub_key = sub_keys[0]
+                if " " in sub_key:
+                    sub_key_fmt = _format_nest_string(sub_key)
+                    key_atom = _format_atom(key, is_key=True)
+                    formatted_entry = f'({key_atom} "" {sub_key_fmt})'
+                else:
+                    # Simple sub-key. (key sub_key)
+                    key_atom = _format_atom(key, is_key=True)
+                    sub_key_atom = _format_atom(sub_key, is_key=True)
+                    formatted_entry = f"({key_atom} {sub_key_atom})"
+            else:
+                # Recursive nest
+                key_atom = _format_atom(key, is_key=True)
+                # Recurse
+                body = _serialize_nest_body(value, indent, level + 1)
+
+                if indent > 0:
+                    if "\n" not in body:
+                        formatted_entry = f"({key_atom} {body.lstrip()})"
+                    else:
+                        formatted_entry = f"({key_atom}\n{body}\n{pad})"
+                else:
+                    formatted_entry = f"({key_atom} {body})"
+
+        else:
+            # Fallback
+            val_str = _format_nest_string(str(value))
+            key_atom = _format_atom(key, is_key=True)
+            formatted_entry = f'({key_atom} "" {val_str})'
+
+        parts.append(formatted_entry)
+
+    if should_condense:
+        return " ".join(parts)
+
+    if indent > 0:
+        if parts:
+            padded_parts = [f"{pad}{p}" for p in parts]
+            return "\n".join(padded_parts)
+    return " ".join(parts)
 
 
 def _serialize_field(key: str, value: Any, indent: int, level: int) -> str:
     """Serializes a single key-value pair into a full Sxpb field string."""
     pad = " " * (indent * level) if indent > 0 else ""
 
-    if isinstance(value, SxpbMany) and not value:
-        return f"{pad}(({key}))"
+    if isinstance(value, SxpbNest):
+        body = _serialize_nest_body(value, indent, level + 1)
+        if indent > 0:
+            if "\n" not in body:
+                return f'{pad}({key} ("") {body.lstrip()})'
+            else:
+                return f'{pad}({key} ("")\n{body}\n{pad})'
+        else:
+            return f'({key} ("") {body})'
+
+    if isinstance(value, SxpbMany):
+        if not value:
+            return f"{pad}(({key}))"
+
+        parts = []
+        for item in value:
+            if isinstance(item, SxpbLone) and "value" in item and len(item) == 1:
+                val = item["value"]
+                if indent > 0:
+                    inner_pad = " " * (indent * (level + 1))
+                    parts.append(f"{inner_pad}{_format_atom(val, in_array=True)}")
+                else:
+                    parts.append(_format_atom(val, in_array=True))
+            else:
+                parts.append(_serialize_message_body(item, indent, level + 1))
+
+        if indent > 0:
+            body = "\n".join(parts)
+            return f"{pad}(({key})\n{body}\n{pad})"
+
+        if indent == 0:
+            body = " ".join(parts)
+            return f"(({key}) {body})"
+
+        # indent < 0
+        body = _join_condensed(parts)
+        return f"(({key}){body})"
 
     if isinstance(value, SxpbLone):
         subkey, lone_value = list(value.items())[0]

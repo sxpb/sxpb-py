@@ -1,30 +1,43 @@
-?start: message_body | array_body | manyof_body
+?start: message_body | discriminated_array | discriminated_manyof | discriminated_nest
+
+message_body: any_field*
+discriminated_array: LIST_DISCRIM array_body
+discriminated_manyof: LIST_DISCRIM any_field*
+discriminated_nest: NEST_DISCRIM nest_body
+discriminated_string: STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
 any_field: regular_field | loneof_field | manyof_field
-message_body: any_field*
+regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
+loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
+manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_item* ) ")"
+nest_subfield: "(" field_name nest_body ")"
+discriminated_string_field: "(" field_name discriminated_string ")"
 
-regular_field: "(" field_name (scalar_body | message_body | array_body) ")"
-loneof_field:  "(" loneof_name (scalar_body | message_body | array_body) ")"
-manyof_field: "(" ( field_name manyof_body | "(" field_name ")" (manyof_item | any_field)* ) ")"
-
-loneof_name: "(" field_name field_name ")"
-
+field_name: BARE | NONEMPTY_ESCAPED_STRING
 scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
 string_body: (ESCAPED_STRING | MULTILINE_STRING | BARE) (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
-array_body: "(())" (unnamed_message_field* | SIGNED_NUMBER* | BOOLEAN* | string_array)
-string_array: (ESCAPED_STRING | MULTILINE_STRING | BARE | PLAIN | unquoted_array_string)*
-unquoted_array_string: "(" "\"\"" (ESCAPED_STRING | MULTILINE_STRING | PLAIN)+ ")"
+array_body: message_array_body | SIGNED_NUMBER* | BOOLEAN* | string_array_body
+message_array_body: (empty_message | anonymous_discriminated_message)*
+empty_message: DICT_DISCRIM
+anonymous_discriminated_message: "(" DICT_DISCRIM message_body ")"
+string_array_body: (ESCAPED_STRING | MULTILINE_STRING | BARE | PLAIN | anonymous_discriminated_string)*
+anonymous_discriminated_string: "(" discriminated_string ")"
 
-manyof_body: "(())" any_field*
+loneof_name: "(" field_name field_name ")"
 
-unnamed_message_field: "(" empty_message message_body ")" | empty_message
+manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field
 
-empty_message: "(" ")"
+nest_key: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING | anonymous_discriminated_string
+nest_body: nest_item*
+nest_item: nest_key | nest_subfield | discriminated_string_field
 
-manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN
-
-field_name: BARE | NONEMPTY_ESCAPED_STRING
+# Type discriminators: (), (()), (""), ""
+# We tolerate accidental blank space but not comments.
+DICT_DISCRIM: /\(\s*\)/
+LIST_DISCRIM: /\(\s*\(\s*\)\s*\)/
+NEST_DISCRIM: /\(\s*""\s*\)/
+STRING_DISCRIM: "\"\""
 
 BOOLEAN: /\+true|\+false/
 

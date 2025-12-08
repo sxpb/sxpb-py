@@ -1,0 +1,23 @@
+; The toplevel structure is a nest,
+; which is a free-form recursive string dict
+; that is useful for structuring descriptions into a hierarchy.
+("")
+
+("black bear"
+ (color cinnamon)
+ ("" clawing at the bark of a Douglas fir)
+)
+
+("grizzly bear" "" foraging for honeyberries)
+
+(meadow
+ (grass
+  green
+  verdant
+  (swaying "" gently in the breeze)
+ )
+ (wildflowers
+  blooming
+  (fragrance sweet subtle)
+ )
+)

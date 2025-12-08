@@ -1,6 +1,6 @@
 ; The toplevel structure is an array, specifically a manyof.
-; This is not supported in Protobuf, so the toplevel array in manyof.txtpb
-; would need a field name in order to be valid.
+; This is not supported in Protobuf,
+; so a manyof.txtpb would need a field name in order to be valid.
 (())
 
 ((identical_expressions)

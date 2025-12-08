@@ -12,6 +12,7 @@ from .types import (
     SxpbList as List,
     SxpbLone as Lone,
     SxpbMany as Many,
+    SxpbNest as Nest,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "List",
     "Lone",
     "Many",
+    "Nest",
 ]
