@@ -36,9 +36,9 @@ def test_array_serialization_with_indents():
     assert sxpb.dumps(data, indent=-1) == expected_condensed
 
 
-def test_top_level_list_serialization():
-    """Tests top-level list serialization with different indents."""
-    data = [{"a": 1}, {"b": 2}]
+def test_top_level_manyof_serialization():
+    """Tests top-level manyof (SxpbMany) serialization with different indents."""
+    data = sxpb.Many([{"a": 1}, {"b": 2}])
     # Positive indent
     expected_pretty = "(())\n(a 1)\n(b 2)"
     assert sxpb.dumps(data, indent=1) == expected_pretty
@@ -47,6 +47,20 @@ def test_top_level_list_serialization():
     assert sxpb.dumps(data, indent=0) == expected_zero
     # Condensed indent
     expected_condensed = "(())(a 1)(b 2)"
+    assert sxpb.dumps(data, indent=-1) == expected_condensed
+
+
+def test_top_level_array_serialization():
+    """Tests top-level array (list) serialization with different indents."""
+    data = [1, 2, 3]
+    # Positive indent
+    expected_pretty = "(())\n1\n2\n3"
+    assert sxpb.dumps(data, indent=1) == expected_pretty
+    # Zero indent
+    expected_zero = "(()) 1 2 3"
+    assert sxpb.dumps(data, indent=0) == expected_zero
+    # Condensed indent
+    expected_condensed = "(()1 2 3)"
     assert sxpb.dumps(data, indent=-1) == expected_condensed
 
 

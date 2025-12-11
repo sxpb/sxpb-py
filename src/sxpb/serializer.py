@@ -21,8 +21,9 @@ def dumps(obj: Any, indent: int = 1) -> str:
 
     if isinstance(obj, Mapping):
         return _serialize_message_body(obj, indent, 0)
-    if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
-        # This handles top-level lists, like in manyof.sxpb
+
+    if isinstance(obj, SxpbMany):
+        # Top-level ManyOf
         if not obj:
             return "(())"
         parts = []
@@ -36,6 +37,23 @@ def dumps(obj: Any, indent: int = 1) -> str:
 
         # indent < 0
         return _join_condensed(["(())"] + parts)
+
+    if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
+        # Top-level Array
+        list_body = _serialize_list_body(obj, indent, 0)
+        if not list_body:
+            return "(())"
+
+        if indent > 0:
+            if "\n" not in list_body:
+                return f"(()) {list_body}"
+            return f"(())\n{list_body}"
+
+        if indent == 0:
+            return f"(()) {list_body}"
+
+        # indent < 0
+        return f"((){list_body})"
 
     raise TypeError("Top-level object must be a message/dict or a list/array")
 
