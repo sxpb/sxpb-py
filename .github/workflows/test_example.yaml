@@ -1,0 +1,39 @@
+name: sxpb_example
+
+on: [push, pull_request]
+
+jobs:
+  test_example:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sxpb_example
+        uses: actions/checkout@v6
+        with:
+          repository: sxproto/sxpb_example
+
+      - name: Set up PDM
+        uses: pdm-project/setup-pdm@v4
+        with:
+          python-version: "3.x"
+
+      - name: Update sxpb dependency
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            REPO="${{ github.event.pull_request.head.repo.full_name }}"
+            SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            REPO="${{ github.repository }}"
+            SHA="${{ github.sha }}"
+          fi
+
+          echo "Updating sxpb to ${REPO} @ ${SHA}"
+          pdm add -d "sxpb @ git+https://github.com/${REPO}.git@${SHA}"
+
+      - name: Lock dependencies
+        run: pdm lock
+
+      - name: Install dependencies
+        run: pdm install
+
+      - name: Run tests
+        run: pdm run test
