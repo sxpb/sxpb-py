@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from sxpb import parser, serializer
-from sxpb.types import SxpbNest, SxpbDict
+from sxpb.types import SxpbNest, SxpbMesg
 import pytest
 from lark import UnexpectedToken, UnexpectedCharacters
 import textwrap
@@ -17,7 +17,7 @@ def test_user_example():
         )
     """)
     data = parser.loads(sxpb_text, precise=True)
-    assert isinstance(data, (dict, SxpbDict))
+    assert isinstance(data, (dict, SxpbMesg))
     nest = data["my_nest"]
     assert isinstance(nest, Sequence)
 
@@ -89,7 +89,7 @@ def test_nest_roundtrip():
 
     # Parse back
     loaded = parser.loads(serialized, precise=True)
-    assert isinstance(loaded, (dict, SxpbDict))
+    assert isinstance(loaded, (dict, SxpbMesg))
     assert loaded["my_nest"] == nest
 
 
@@ -123,7 +123,7 @@ def test_illegal_subnest_in_string_field():
     # Also test legal atoms
     legal_text = '(my_nest ("") (my_string "" legal atoms))'
     data = parser.loads(legal_text, precise=True)
-    assert isinstance(data, (dict, SxpbDict))
+    assert isinstance(data, (dict, SxpbMesg))
     assert "my_nest" in data
     nest = data["my_nest"]
     assert isinstance(nest, Sequence)

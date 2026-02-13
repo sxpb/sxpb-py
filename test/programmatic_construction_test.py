@@ -1,17 +1,17 @@
 import textwrap
 
 from sxpb.serializer import dumps
-from sxpb.types import SxpbDict, SxpbList
+from sxpb.types import SxpbMesg, SxpbList
 
 
 def test_programmatic_construction():
-    holidays = SxpbDict(
+    holidays = SxpbMesg(
         {
             "description": "My favorite holidays in 2025",
             "year": 2025,
             "holidays": SxpbList(
                 [
-                    SxpbDict(
+                    SxpbMesg(
                         {
                             "month": "January",
                             "day": 1,
@@ -19,7 +19,7 @@ def test_programmatic_construction():
                             "activity": "Watch the Rose Parade",
                         }
                     ),
-                    SxpbDict(
+                    SxpbMesg(
                         {
                             "month": "October",
                             "day": 31,
@@ -27,7 +27,7 @@ def test_programmatic_construction():
                             "activity": "Carve pumpkins",
                         }
                     ),
-                    SxpbDict(
+                    SxpbMesg(
                         {
                             "month": "December",
                             "day": 25,

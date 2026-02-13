@@ -3,7 +3,7 @@ from collections import UserDict, UserList
 
 
 def to_xml(sxpb_data: UserDict) -> str:
-    """Converts an SxpbDict object to an XML string."""
+    """Converts an SxpbMesg object to an XML string."""
 
     def build_element(tag, data):
         attributes = {}

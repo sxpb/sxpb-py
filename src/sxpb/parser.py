@@ -9,7 +9,7 @@ import lark
 from lark import Lark, Token, Transformer, v_args
 
 from .jsonutil import to_plain_types
-from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbNest
+from .types import SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNest
 
 GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
 LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
@@ -89,7 +89,7 @@ class SexpTransformer(Transformer):
         return val
 
     def message_body(self, fields):
-        message = SxpbDict()
+        message = SxpbMesg()
         for key, val in fields:
             if key in message:
                 if not isinstance(message[key], UserList):
@@ -156,7 +156,7 @@ class SexpTransformer(Transformer):
         return items[0]
 
     def empty_message(self, _):
-        return SxpbDict()
+        return SxpbMesg()
 
     def anonymous_discriminated_message(self, items):
         # items: [empty_message_result, message_body_result] -> [{}, dict]

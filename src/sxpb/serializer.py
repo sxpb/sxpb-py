@@ -55,7 +55,7 @@ def dumps(obj: Any, indent: int = 1) -> str:
         # indent < 0
         return f"((){list_body})"
 
-    raise TypeError("Top-level object must be a message/dict or a list/array")
+    raise TypeError("Top-level object must be a message or a list/array")
 
 
 def dump(obj: Any, path: str, indent: int = 1):

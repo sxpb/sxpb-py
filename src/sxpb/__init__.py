@@ -8,10 +8,10 @@ from .serializer import dumps as dumps, dump as dump
 from .jsonutil import to_json, from_json
 from .xml import to_xml
 from .types import (
-    SxpbDict as Dict,
     SxpbList as List,
     SxpbLone as Lone,
     SxpbMany as Many,
+    SxpbMesg as Mesg,
     SxpbNest as Nest,
 )
 
@@ -23,9 +23,9 @@ __all__ = [
     "to_json",
     "from_json",
     "to_xml",
-    "Dict",
     "List",
     "Lone",
     "Many",
+    "Mesg",
     "Nest",
 ]
