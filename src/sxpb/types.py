@@ -29,5 +29,15 @@ class SxpbMany(UserList):
         return [_to_plain_type(v) for v in self]
 
 
-class SxpbNest(SxpbDict):
-    pass
+class SxpbNest(SxpbList):
+    def pairs(self):
+        for item in self:
+            # In the parser, named subnests are represented as SxpbLone objects
+            # because they are structurally identical to loneofs (single key-value pairs).
+            if isinstance(item, SxpbLone):
+                for k, v in item.items():
+                    yield k, v
+            elif isinstance(item, SxpbNest):
+                yield "", item
+            else:
+                yield item, None

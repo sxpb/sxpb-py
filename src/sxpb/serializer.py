@@ -176,14 +176,12 @@ def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
     pad = " " * (indent * level) if indent > 0 else ""
 
     # "a nest of 1 to 3 strings should stay on the same line, but any more or any subnests cause each to be on their own line"
-    # "strings" here means keys with None value (leaves).
-
     all_strings = True
     leaves = []
 
-    for key, value in nest.items():
-        if value is None:
-            leaves.append(key)
+    for item in nest:
+        if isinstance(item, str):
+            leaves.append(item)
         else:
             all_strings = False
             break
@@ -191,61 +189,76 @@ def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
     should_condense = all_strings and len(leaves) >= 1 and len(leaves) <= 3
 
     parts = []
-    for key, value in nest.items():
+    for item in nest:
         # Handle formatting logic
         formatted_entry = ""
 
-        # Determine if we should quote key or use ("" key) syntax for multi-word keys
-        # If value is None, we are flexible.
-
-        key_has_spaces = " " in key
-
-        if value is None:
-            if key_has_spaces:
-                # Use ("" key) syntax to allow bare words
-                formatted_key = _format_nest_string(key)
-                formatted_entry = f'("" {formatted_key})'
+        if isinstance(item, str):
+            key = item
+            if not key:
+                formatted_entry = '("" "")'
             else:
-                # Use simple bare key (quoted if special chars)
-                formatted_entry = _format_atom(key, is_key=True)
-
-        elif isinstance(value, SxpbNest):
-            # Check for single-string optimization
-            # Optimization: If sub-nest has 1 key K, and value is None.
-            # If K has spaces, output (key "" K).
-            # If K is simple, output (key K).
-
-            sub_keys = list(value.keys())
-            if len(sub_keys) == 1 and value[sub_keys[0]] is None:
-                sub_key = sub_keys[0]
-                if " " in sub_key:
-                    sub_key_fmt = _format_nest_string(sub_key)
-                    key_atom = _format_atom(key, is_key=True)
-                    formatted_entry = f'({key_atom} "" {sub_key_fmt})'
+                key_has_spaces = " " in key
+                if key_has_spaces:
+                    # Use ("" key) syntax to allow bare words
+                    formatted_key = _format_nest_string(key)
+                    formatted_entry = f'("" {formatted_key})'
                 else:
-                    # Simple sub-key. (key sub_key)
-                    key_atom = _format_atom(key, is_key=True)
-                    sub_key_atom = _format_atom(sub_key, is_key=True)
-                    formatted_entry = f"({key_atom} {sub_key_atom})"
-            else:
-                # Recursive nest
-                key_atom = _format_atom(key, is_key=True)
-                # Recurse
-                body = _serialize_nest_body(value, indent, level + 1)
+                    # Use simple bare key (quoted if special chars)
+                    formatted_entry = _format_atom(key, is_key=True)
 
-                if indent > 0:
-                    if "\n" not in body:
-                        formatted_entry = f"({key_atom} {body.lstrip()})"
+        elif isinstance(item, Mapping):
+            # Dict with 1 key: sub-nest
+            key, value = list(item.items())[0]
+
+            if isinstance(value, SxpbNest):
+                # Check for single-string optimization
+                # Optimization: If sub-nest has 1 item K which is string.
+                # If K has spaces, output (key "" K).
+                # If K is simple, output (key K).
+
+                if key == "":
+                    # Anonymous nest: ("" ("") body)
+                    # We must force the ("") discriminator
+                    key_atom = '""'
+                    body = _serialize_nest_body(value, indent, level + 1)
+                    if indent > 0:
+                        if "\n" not in body:
+                            formatted_entry = f'({key_atom} ("") {body.lstrip()})'
+                        else:
+                            formatted_entry = f'({key_atom} ("")\n{body}\n{pad})'
                     else:
-                        formatted_entry = f"({key_atom}\n{body}\n{pad})"
-                else:
-                    formatted_entry = f"({key_atom} {body})"
+                        formatted_entry = f'({key_atom} ("") {body})'
 
-        else:
-            # Fallback
-            val_str = _format_nest_string(str(value))
-            key_atom = _format_atom(key, is_key=True)
-            formatted_entry = f'({key_atom} "" {val_str})'
+                elif len(value) == 1 and isinstance(value[0], str):
+                    sub_key = value[0]
+                    if " " in sub_key:
+                        sub_key_fmt = _format_nest_string(sub_key)
+                        key_atom = _format_atom(key, is_key=True)
+                        formatted_entry = f'({key_atom} "" {sub_key_fmt})'
+                    else:
+                        # Simple sub-key. (key sub_key)
+                        key_atom = _format_atom(key, is_key=True)
+                        sub_key_atom = _format_atom(sub_key, is_key=True)
+                        formatted_entry = f"({key_atom} {sub_key_atom})"
+                else:
+                    # Recursive nest
+                    key_atom = _format_atom(key, is_key=True)
+                    # Recurse
+                    body = _serialize_nest_body(value, indent, level + 1)
+
+                    if indent > 0:
+                        if "\n" not in body:
+                            formatted_entry = f"({key_atom} {body.lstrip()})"
+                        else:
+                            formatted_entry = f"({key_atom}\n{body}\n{pad})"
+                    else:
+                        formatted_entry = f"({key_atom} {body})"
+            else:
+                # Should not happen given new parser logic, but fallback
+                val_str = _format_nest_string(str(value))
+                key_atom = _format_atom(key, is_key=True)
+                formatted_entry = f'({key_atom} "" {val_str})'
 
         parts.append(formatted_entry)
 

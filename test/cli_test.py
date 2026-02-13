@@ -1,15 +1,18 @@
 import json
 from pathlib import Path
+import pytest
 
 
 CONTENT_DIR = Path(__file__).parent / "content"
+CONTENT_FILES = [f.stem for f in CONTENT_DIR.glob("*.sxpb") if "pumpkin" not in f.stem]
 
 
-def test_sxpb2json_stdin_stdout(run_sxpb2json_tool):
-    sxpb_path = CONTENT_DIR / "array.sxpb"
-    json_path = CONTENT_DIR / "array.json"
+@pytest.mark.parametrize("name", CONTENT_FILES)
+def test_sxpb2json_matches_json_content(name, run_sxpb2json_tool):
+    sxpb_filepath = CONTENT_DIR / f"{name}.sxpb"
+    json_filepath = CONTENT_DIR / f"{name}.json"
 
-    with open(sxpb_path, "r") as f:
+    with open(sxpb_filepath, "r") as f:
         sxpb_content = f.read()
 
     result = run_sxpb2json_tool([], stdin_data=sxpb_content)
@@ -17,23 +20,23 @@ def test_sxpb2json_stdin_stdout(run_sxpb2json_tool):
     assert result.returncode == 0
 
     generated_json = json.loads(result.stdout)
-    expected_json = json.loads(json_path.read_text())
+    expected_json = json.loads(json_filepath.read_text())
 
     assert generated_json == expected_json
 
 
 def test_sxpb2json_file_args(tmp_path, run_sxpb2json_tool):
-    sxpb_path = CONTENT_DIR / "array.sxpb"
-    json_path = CONTENT_DIR / "array.json"
+    sxpb_filepath = CONTENT_DIR / "array.sxpb"
+    json_filepath = CONTENT_DIR / "array.json"
 
-    out_path = tmp_path / "output.json"
+    out_filepath = tmp_path / "output.json"
 
-    result = run_sxpb2json_tool([str(sxpb_path), str(out_path)])
+    result = run_sxpb2json_tool([str(sxpb_filepath), str(out_filepath)])
 
     assert result.returncode == 0
 
-    generated_json = json.loads(out_path.read_text())
-    expected_json = json.loads(json_path.read_text())
+    generated_json = json.loads(out_filepath.read_text())
+    expected_json = json.loads(json_filepath.read_text())
 
     assert generated_json == expected_json
 

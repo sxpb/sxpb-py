@@ -1,6 +1,6 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from sxpb import parser, serializer
-from sxpb.types import SxpbNest
+from sxpb.types import SxpbNest, SxpbDict
 import pytest
 from lark import UnexpectedToken, UnexpectedCharacters
 import textwrap
@@ -17,36 +17,34 @@ def test_user_example():
         )
     """)
     data = parser.loads(sxpb_text, precise=True)
-    assert isinstance(data, Mapping)
+    assert isinstance(data, (dict, SxpbDict))
     nest = data["my_nest"]
+    assert isinstance(nest, Sequence)
 
     # t
     assert "t" in nest
-    assert nest["t"] is None
 
     # ("" u v) -> "u v"
     assert "u v" in nest
-    assert nest["u v"] is None
 
-    # (w a b) -> w -> {a: None, b: None}
-    assert "w" in nest
-    w = nest["w"]
+    # (w a b) -> w -> [a, b]
+    # We need to find the dict {w: ...} in the list
+    w_item = next(item for item in nest if isinstance(item, Mapping) and "w" in item)
+    w = w_item["w"]
     assert "a" in w
-    assert w["a"] is None
     assert "b" in w
-    assert w["b"] is None
 
-    # (x "" c d) -> x -> {"c d": None}
-    assert "x" in nest
-    x = nest["x"]
+    # (x "" c d) -> x -> ["c d"]
+    x_item = next(item for item in nest if isinstance(item, Mapping) and "x" in item)
+    x = x_item["x"]
     assert "c d" in x
-    assert x["c d"] is None
+    assert len(x) == 1
 
-    # ("y z" "" e f) -> "y z" -> {"e f": None}
-    assert "y z" in nest
-    yz = nest["y z"]
+    # ("y z" "" e f) -> "y z" -> ["e f"]
+    yz_item = next(item for item in nest if isinstance(item, Mapping) and "y z" in item)
+    yz = yz_item["y z"]
     assert "e f" in yz
-    assert yz["e f"] is None
+    assert len(yz) == 1
 
     # Serialization test
     generated_sxpb = serializer.dumps(data, indent=1)
@@ -65,18 +63,13 @@ def test_user_example():
 def test_nest_roundtrip():
     # Construct a Nest object programmatically
     nest = SxpbNest(
-        {
-            "simple": None,
-            "sub": SxpbNest(
-                {
-                    "key1": None,
-                    "key2": None,
-                }
-            ),
-            "str_field": SxpbNest({"some string value": None}),
-            "quoted string": None,
-            "empty_str": SxpbNest({"": None}),
-        }
+        [
+            "simple",
+            {"sub": SxpbNest(["key1", "key2"])},
+            {"str_field": SxpbNest(["some string value"])},
+            "quoted string",
+            {"empty_str": SxpbNest([""])},
+        ]
     )
 
     # Wrap in a message structure as Nests are usually fields
@@ -96,25 +89,25 @@ def test_nest_roundtrip():
 
     # Parse back
     loaded = parser.loads(serialized, precise=True)
-    assert isinstance(loaded, Mapping)
+    assert isinstance(loaded, (dict, SxpbDict))
     assert loaded["my_nest"] == nest
 
 
 def test_formatting_rules():
     # 4 strings -> multiline
-    nest = SxpbNest({"a": None, "b": None, "c": None, "d": None})
+    nest = SxpbNest(["a", "b", "c", "d"])
     data = {"test": nest}
     serialized = serializer.dumps(data, indent=1)
     assert '(test ("")\n a\n b\n c\n d\n)' in serialized
 
     # 3 strings -> inline
-    nest3 = SxpbNest({"a": None, "b": None, "c": None})
+    nest3 = SxpbNest(["a", "b", "c"])
     data3 = {"test": nest3}
     serialized3 = serializer.dumps(data3, indent=1)
     assert '(test ("") a b c)' in serialized3
 
     # subnest -> multiline
-    nest_mixed = SxpbNest({"a": None, "sub": SxpbNest({"x": None})})
+    nest_mixed = SxpbNest(["a", {"sub": SxpbNest(["x"])}])
     data_mixed = {"test": nest_mixed}
     serialized_mixed = serializer.dumps(data_mixed, indent=1)
     assert '(test ("")\n a\n (sub x)\n)' in serialized_mixed
@@ -130,11 +123,14 @@ def test_illegal_subnest_in_string_field():
     # Also test legal atoms
     legal_text = '(my_nest ("") (my_string "" legal atoms))'
     data = parser.loads(legal_text, precise=True)
-    assert isinstance(data, Mapping)
+    assert isinstance(data, (dict, SxpbDict))
     assert "my_nest" in data
-    assert isinstance(data["my_nest"], Mapping)
-    assert "my_string" in data["my_nest"]
-    assert "legal atoms" in data["my_nest"]["my_string"]
+    nest = data["my_nest"]
+    assert isinstance(nest, Sequence)
+    item = next(
+        item for item in nest if isinstance(item, Mapping) and "my_string" in item
+    )
+    assert "legal atoms" in item["my_string"]
 
 
 def test_toplevel_nest():
@@ -146,10 +142,13 @@ def test_toplevel_nest():
     data = parser.loads(sxpb_text, precise=True)
     assert isinstance(data, SxpbNest)
     assert "key1" in data
-    assert data["key1"] is None
-    assert "key2" in data
-    assert isinstance(data["key2"], SxpbNest)
-    assert "val2" in data["key2"]
+
+    key2_item = next(
+        item for item in data if isinstance(item, Mapping) and "key2" in item
+    )
+    key2 = key2_item["key2"]
+    assert isinstance(key2, SxpbNest)
+    assert "val2" in key2
 
     # Roundtrip
     serialized = serializer.dumps(data, indent=1)

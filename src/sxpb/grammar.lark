@@ -10,7 +10,7 @@ any_field: regular_field | loneof_field | manyof_field
 regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
 loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
 manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_item* ) ")"
-nest_subfield: "(" field_name nest_body ")"
+nest_subfield: "(" field_name NEST_DISCRIM? nest_body ")"
 discriminated_string_field: "(" field_name discriminated_string ")"
 
 field_name: BARE | NONEMPTY_ESCAPED_STRING
@@ -22,15 +22,16 @@ message_array_body: (empty_message | anonymous_discriminated_message)*
 empty_message: DICT_DISCRIM
 anonymous_discriminated_message: "(" DICT_DISCRIM message_body ")"
 string_array_body: (ESCAPED_STRING | MULTILINE_STRING | BARE | PLAIN | anonymous_discriminated_string)*
-anonymous_discriminated_string: "(" discriminated_string ")"
+anonymous_discriminated_string: "(" STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)+ ")"
 
 loneof_name: "(" field_name field_name ")"
 
 manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field
 
-nest_key: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING | anonymous_discriminated_string
+nest_key: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 nest_body: nest_item*
-nest_item: nest_key | nest_subfield | discriminated_string_field
+nest_item: nest_key | nest_subfield | discriminated_string_field | anonymous_discriminated_string | anonymous_discriminated_nest
+anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
 
 # Type discriminators: (), (()), (""), ""
 # We tolerate accidental blank space but not comments.

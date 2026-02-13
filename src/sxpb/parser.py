@@ -172,8 +172,7 @@ class SexpTransformer(Transformer):
         return self.string_body(items[1:])
 
     def anonymous_discriminated_string(self, items):
-        # items[0] is the result of discriminated_string (which returns a string)
-        return items[0]
+        return self.string_body(items[1:])
 
     def string_array_body(self, items):
         # The transformer has already processed the terminal tokens into strings or UnquotedString objects.
@@ -210,38 +209,38 @@ class SexpTransformer(Transformer):
         return items[-1]
 
     def nest_body(self, items):
-        nest = SxpbNest()
-        for item in items:
-            # item is (key, value)
-            key, value = item
-            nest[key] = value
-        return nest
+        return SxpbNest(items)
 
     def nest_item(self, items):
         # items[0] is the result of nest_key | nest_subfield | discriminated_string_field
         return items[0]
 
     @v_args(inline=True)
-    def nest_key(self, k):
+    def nest_key(self, k: str) -> str:
         # k can be UnquotedString (BARE) or str (ESCAPED_STRING etc)
-        # Returns (key, None) for leaf nodes per requirement
         if isinstance(k, UnquotedString):
             k = str(k)
         # anonymous_discriminated_string logic returns joined string, passed as is
-        return k, None
+        return k
 
     def nest_subfield(self, items):
         # items: [field_name, nest_body]
         key = items[0]
-        body = items[1]
-        return key, body
+        body = items[-1]
+        return SxpbLone({key: body})
+
+    def anonymous_discriminated_nest(self, items):
+        # items: [NEST_DISCRIM, nest_body]
+        # Wrap the list returned by nest_body in SxpbNest
+        # Return as SxpbLone with empty key to match JSON representation and handle serialization
+        return SxpbLone({"": SxpbNest(items[-1])})
 
     def discriminated_string_field(self, items):
         # items: [field_name, discriminated_string]
         # discriminated_string already returns string
         key = items[0]
         content = items[1]
-        return key, SxpbNest({content: None})
+        return SxpbLone({key: SxpbNest([content])})
 
 
 sxpb_parser = Lark(GRAMMAR, start="start", import_paths=[LARK_GRAMMAR_PATH])
