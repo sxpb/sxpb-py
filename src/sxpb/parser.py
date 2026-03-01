@@ -9,7 +9,7 @@ import lark
 from lark import Lark, Token, Transformer, v_args
 
 from .jsonutil import to_plain_types
-from .types import SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNest
+from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNest
 
 GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
 LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
@@ -140,6 +140,10 @@ class SexpTransformer(Transformer):
 
     def loneof_name(self, items):
         return items
+
+    def discriminated_dict(self, items):
+        # items[0] is DICT_DISCRIM, items[1] is message_body
+        return SxpbDict(items[1])
 
     def discriminated_manyof(self, items):
         # items[0] might be LIST_DISCRIM if it's passed through

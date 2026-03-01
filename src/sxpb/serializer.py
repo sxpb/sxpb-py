@@ -3,7 +3,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from sxpb.types import SxpbLone, SxpbMany, SxpbNest
+from sxpb.types import SxpbDict, SxpbLone, SxpbMany, SxpbNest
 
 
 def dumps(obj: Any, indent: int = 1) -> str:
@@ -18,6 +18,18 @@ def dumps(obj: Any, indent: int = 1) -> str:
                 return f'("")\n{body}'
         else:
             return f'("") {body}'
+
+    if isinstance(obj, SxpbDict):
+        # Top-level Dict
+        body = _serialize_message_body(obj, indent, 0)
+        if not body:
+            return "()"
+        if indent > 0:
+            return "()\n" + body
+        if indent == 0:
+            return "() " + body
+        # indent < 0
+        return "()" + body
 
     if isinstance(obj, Mapping):
         return _serialize_message_body(obj, indent, 0)
@@ -339,6 +351,16 @@ def _serialize_field(key: str, value: Any, indent: int, level: int) -> str:
                 else f"({_join_condensed([key, subkey])})"
             )
             return f"(({_join_condensed([key_part, _format_atom(lone_value)])}))"
+
+    if isinstance(value, SxpbDict):
+        body = _serialize_message_body(value, indent, level + 1)
+        if not body:
+            return f"{pad}({key} ())"
+        if indent > 0:
+            return f"{pad}({key} ()\n{body}\n{pad})"
+
+        joiner = " " if indent == 0 else ""
+        return f"({key}{joiner}(){joiner}{body})"
 
     if isinstance(value, Mapping):
         body = _serialize_message_body(value, indent, level + 1)

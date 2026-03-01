@@ -9,6 +9,11 @@ def _to_plain_type(v):
     return v
 
 
+class SxpbDict(UserDict):
+    def to_dict(self):
+        return {k: _to_plain_type(v) for k, v in self.items()}
+
+
 class SxpbList(UserList):
     def to_list(self):
         return [_to_plain_type(v) for v in self]

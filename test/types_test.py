@@ -1,5 +1,5 @@
 from sxpb.parser import loads
-from sxpb.types import SxpbList, SxpbLone, SxpbMany, SxpbMesg
+from sxpb.types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg
 
 
 def test_to_dict_and_to_list():
@@ -9,6 +9,7 @@ def test_to_dict_and_to_list():
             "b": SxpbMesg({"c": 4}),
             "d": SxpbLone({"e": 5}),
             "f": SxpbMany([SxpbLone({"value": 6})]),
+            "g": SxpbDict({"h": 7}),
         }
     )
 
@@ -24,6 +25,8 @@ def test_to_dict_and_to_list():
     assert not isinstance(plain_data["d"], SxpbLone)
     assert isinstance(plain_data["f"], list)
     assert not isinstance(plain_data["f"], SxpbMany)
+    assert isinstance(plain_data["g"], dict)
+    assert not isinstance(plain_data["g"], SxpbDict)
 
 
 def test_loads_precise():

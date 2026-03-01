@@ -1,14 +1,15 @@
-?start: message_body | discriminated_array | discriminated_manyof | discriminated_nest
+?start: message_body | discriminated_array | discriminated_dict | discriminated_manyof | discriminated_nest
 
 message_body: any_field*
 discriminated_array: LIST_DISCRIM array_body
+discriminated_dict: DICT_DISCRIM message_body
 discriminated_manyof: LIST_DISCRIM any_field*
 discriminated_nest: NEST_DISCRIM nest_body
 discriminated_string: STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
 any_field: regular_field | loneof_field | manyof_field
-regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
-loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_nest) ")"
+regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
+loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_item* ) ")"
 nest_subfield: "(" field_name NEST_DISCRIM? nest_body ")"
 discriminated_string_field: "(" field_name discriminated_string ")"

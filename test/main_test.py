@@ -1,7 +1,6 @@
 import json
-import subprocess
-
 import pytest
+import subprocess
 
 # Test cases: (sxpb_content, json_content)
 TEST_CASES = [
