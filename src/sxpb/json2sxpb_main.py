@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+from contextlib import ExitStack
 
 from .serializer import dumps
 
@@ -11,15 +12,13 @@ def main():
     parser.add_argument(
         "infile",
         nargs="?",
-        type=argparse.FileType("r"),
-        default=sys.stdin,
+        default=None,
         help="Input JSON file (stdin if not specified)",
     )
     parser.add_argument(
         "outfile",
         nargs="?",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
+        default=None,
         help="Output Sxpb file (stdout if not specified)",
     )
     parser.add_argument(
@@ -29,11 +28,23 @@ def main():
     args = parser.parse_args()
 
     try:
-        json_data = json.load(args.infile)
-        sxpb_str = dumps(json_data, indent=args.indent)
-        args.outfile.write(sxpb_str)
-        if not sxpb_str.endswith("\n"):
-            args.outfile.write("\n")
+        with ExitStack() as stack:
+            infile = (
+                sys.stdin
+                if args.infile in (None, "-")
+                else stack.enter_context(open(args.infile, encoding="utf-8"))
+            )
+            outfile = (
+                sys.stdout
+                if args.outfile in (None, "-")
+                else stack.enter_context(open(args.outfile, "w", encoding="utf-8"))
+            )
+
+            json_data = json.load(infile)
+            sxpb_str = dumps(json_data, indent=args.indent)
+            outfile.write(sxpb_str)
+            if not sxpb_str.endswith("\n"):
+                outfile.write("\n")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

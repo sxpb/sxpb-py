@@ -83,3 +83,48 @@ def test_unicode_serialization():
     data = {"a": "你好"}
     expected_output = "(a 你好)"
     assert sxpb.dumps(data, indent=0) == expected_output
+
+
+def test_loneof_array_option_serialization():
+    data = sxpb.Lone({"my_loneof_array_option": [1, 2, 3]})
+    assert (
+        sxpb.dumps({"my_key": data}, indent=0)
+        == "((my_key my_loneof_array_option) (()) 1 2 3)"
+    )
+
+
+def test_canonical_string_atoms():
+    data = {
+        "strings": ["1", "two words", "bare"],
+        "flag_strings": ["+true", "+false", "true"],
+        "needs_quote": "1 2",
+    }
+    expected_output = (
+        '(strings (()) "1" "two words" bare) '
+        '(flag_strings (()) "+true" "+false" true) '
+        '(needs_quote "1 2")'
+    )
+    assert sxpb.dumps(data, indent=0) == expected_output
+
+
+def test_canonical_quoted_field_names():
+    data = {"two words": "ok", "1": "one"}
+    assert sxpb.dumps(data, indent=0) == '("two words" ok) ("1" one)'
+
+
+def test_canonical_top_level_nest():
+    data = sxpb.Nest(
+        [
+            "black",
+            {"white": sxpb.Nest(["bear"])},
+            {"grass": sxpb.Nest(["green", "verdant"])},
+        ]
+    )
+    expected_output = '("")\nblack\n(white bear)\n(grass green verdant)'
+    assert sxpb.dumps(data, indent=1) == expected_output
+
+
+def test_canonical_anonymous_nest():
+    data = sxpb.Nest([sxpb.Nest(["content"]), {"": sxpb.Nest([])}])
+    expected_output = '("")\n("" ("") content)\n("" (""))'
+    assert sxpb.dumps(data, indent=1) == expected_output

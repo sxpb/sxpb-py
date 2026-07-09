@@ -17,6 +17,7 @@ def tokenize(text: str) -> Iterator[Tuple[str, str]]:
             pos += 1
             continue
         kind = m.lastgroup
+        assert kind is not None
         val = m.group()
         pos = m.end()
         if kind in ("WS", "SEMICOLON"):

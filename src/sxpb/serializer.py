@@ -184,6 +184,19 @@ def _format_nest_string(s: str) -> str:
     return " ".join(result)
 
 
+def _serialize_anonymous_nest_entry(
+    value: SxpbNest, indent: int, level: int, pad: str
+) -> str:
+    body = _serialize_nest_body(value, indent, level + 1)
+    if not body:
+        return '("" (""))'
+    if indent > 0:
+        if "\n" not in body:
+            return f'("" ("") {body.lstrip()})'
+        return f'("" ("")\n{body}\n{pad})'
+    return f'("" ("") {body})'
+
+
 def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
     pad = " " * (indent * level) if indent > 0 else ""
 
@@ -219,6 +232,9 @@ def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
                     # Use simple bare key (quoted if special chars)
                     formatted_entry = _format_atom(key, is_key=True)
 
+        elif isinstance(item, SxpbNest):
+            formatted_entry = _serialize_anonymous_nest_entry(item, indent, level, pad)
+
         elif isinstance(item, Mapping):
             # Dict with 1 key: sub-nest
             key, value = list(item.items())[0]
@@ -230,17 +246,9 @@ def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
                 # If K is simple, output (key K).
 
                 if key == "":
-                    # Anonymous nest: ("" ("") body)
-                    # We must force the ("") discriminator
-                    key_atom = '""'
-                    body = _serialize_nest_body(value, indent, level + 1)
-                    if indent > 0:
-                        if "\n" not in body:
-                            formatted_entry = f'({key_atom} ("") {body.lstrip()})'
-                        else:
-                            formatted_entry = f'({key_atom} ("")\n{body}\n{pad})'
-                    else:
-                        formatted_entry = f'({key_atom} ("") {body})'
+                    formatted_entry = _serialize_anonymous_nest_entry(
+                        value, indent, level, pad
+                    )
 
                 elif len(value) == 1 and isinstance(value[0], str):
                     sub_key = value[0]
@@ -284,108 +292,107 @@ def _serialize_nest_body(nest: SxpbNest, indent: int, level: int) -> str:
     return " ".join(parts)
 
 
-def _serialize_field(key: str, value: Any, indent: int, level: int) -> str:
-    """Serializes a single key-value pair into a full Sxpb field string."""
+def _format_key(key: str) -> str:
+    return _format_atom(key, is_key=True)
+
+
+def _serialize_manyof_field(
+    key: str, value: SxpbMany, indent: int, level: int, pad: str
+) -> str:
+    if not value:
+        return f"{pad}(({key}))"
+
+    parts = []
+    for item in value:
+        if isinstance(item, SxpbLone) and "value" in item and len(item) == 1:
+            val = item["value"]
+            if indent > 0:
+                inner_pad = " " * (indent * (level + 1))
+                parts.append(f"{inner_pad}{_format_atom(val, in_array=True)}")
+            else:
+                parts.append(_format_atom(val, in_array=True))
+        else:
+            parts.append(_serialize_message_body(item, indent, level + 1))
+
+    if indent > 0:
+        body = "\n".join(parts)
+        return f"{pad}(({key})\n{body}\n{pad})"
+    if indent == 0:
+        body = " ".join(parts)
+        return f"(({key}) {body})"
+    body = _join_condensed(parts)
+    return f"(({key}){body})"
+
+
+def _serialize_loneof_field(
+    key: str, value: SxpbLone, indent: int, level: int, pad: str
+) -> str:
+    subkey, lone_value = list(value.items())[0]
+    subkey = _format_key(subkey)
+    body = _serialize_field_body(lone_value, indent, level)
+    if not body:
+        return f"{pad}(({key} {subkey}))"
+    if indent > 0:
+        return f"{pad}(({key} {subkey}){body})"
+    if indent == 0:
+        return f"(({key} {subkey}){body})"
+
+    key_part = f"({_join_condensed([key, subkey])})"
+    return f"(({_join_condensed([key_part, body])}))"
+
+
+def _serialize_field_body(value: Any, indent: int, level: int) -> str:
     pad = " " * (indent * level) if indent > 0 else ""
 
     if isinstance(value, SxpbNest):
         body = _serialize_nest_body(value, indent, level + 1)
         if indent > 0:
+            if not body:
+                return ' ("")'
             if "\n" not in body:
-                return f'{pad}({key} ("") {body.lstrip()})'
-            else:
-                return f'{pad}({key} ("")\n{body}\n{pad})'
-        else:
-            return f'({key} ("") {body})'
-
-    if isinstance(value, SxpbMany):
-        if not value:
-            return f"{pad}(({key}))"
-
-        parts = []
-        for item in value:
-            if isinstance(item, SxpbLone) and "value" in item and len(item) == 1:
-                val = item["value"]
-                if indent > 0:
-                    inner_pad = " " * (indent * (level + 1))
-                    parts.append(f"{inner_pad}{_format_atom(val, in_array=True)}")
-                else:
-                    parts.append(_format_atom(val, in_array=True))
-            else:
-                parts.append(_serialize_message_body(item, indent, level + 1))
-
-        if indent > 0:
-            body = "\n".join(parts)
-            return f"{pad}(({key})\n{body}\n{pad})"
-
-        if indent == 0:
-            body = " ".join(parts)
-            return f"(({key}) {body})"
-
-        # indent < 0
-        body = _join_condensed(parts)
-        return f"(({key}){body})"
-
-    if isinstance(value, SxpbLone):
-        subkey, lone_value = list(value.items())[0]
-        if isinstance(lone_value, Mapping):
-            body = _serialize_message_body(lone_value, indent, level + 1)
-            if indent > 0:
-                return (
-                    f"{pad}(({key} {subkey})\n{body}\n{pad})"
-                    if body
-                    else f"{pad}(({key} {subkey}))"
-                )
-            key_part = (
-                f"({key} {subkey})"
-                if indent == 0
-                else f"({_join_condensed([key, subkey])})"
-            )
-            return f"(({_join_condensed([key_part, body])}))"
-        else:
-            if indent > 0:
-                return f"{pad}(({key} {subkey}) {_format_atom(lone_value)})"
-            key_part = (
-                f"({key} {subkey})"
-                if indent == 0
-                else f"({_join_condensed([key, subkey])})"
-            )
-            return f"(({_join_condensed([key_part, _format_atom(lone_value)])}))"
+                return f' ("") {body.lstrip()}'
+            return f' ("")\n{body}\n{pad}'
+        return f' ("") {body}' if body else ' ("")'
 
     if isinstance(value, SxpbDict):
         body = _serialize_message_body(value, indent, level + 1)
         if not body:
-            return f"{pad}({key} ())"
+            return " ()"
         if indent > 0:
-            return f"{pad}({key} ()\n{body}\n{pad})"
-
+            return f" ()\n{body}\n{pad}"
         joiner = " " if indent == 0 else ""
-        return f"({key}{joiner}(){joiner}{body})"
+        return f"{joiner}(){joiner}{body}"
 
     if isinstance(value, Mapping):
         body = _serialize_message_body(value, indent, level + 1)
         if not body:
-            return f"{pad}({key})"
+            return ""
         if indent > 0:
-            return f"{pad}({key}\n{body}\n{pad})"
+            return f"\n{body}\n{pad}"
         joiner = " " if indent == 0 or (indent < 0 and not body.startswith("(")) else ""
-        return f"({key}{joiner}{body})"
+        return f"{joiner}{body}"
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         list_body = _serialize_list_body(value, indent, level + 1)
         if indent > 0:
-            return (
-                f"{pad}({key} (())\n{list_body}\n{pad})"
-                if list_body
-                else f"{pad}({key} (()))"
-            )
-
+            return f" (())\n{list_body}\n{pad}" if list_body else " (())"
         joiner = "" if indent < 0 else " "
-        return f"({key}{joiner}(()){joiner}{list_body})"
+        return f"{joiner}(()){joiner}{list_body}" if list_body else f"{joiner}(())"
 
-    if indent > 0:
-        return f"{pad}({key} {_format_atom(value)})"
-    return f"({key} {_format_atom(value)})"
+    return f" {_format_atom(value)}"
+
+
+def _serialize_field(key: str, value: Any, indent: int, level: int) -> str:
+    """Serializes a single key-value pair into a full Sxpb field string."""
+    pad = " " * (indent * level) if indent > 0 else ""
+    key = _format_key(key)
+
+    if isinstance(value, SxpbMany):
+        return _serialize_manyof_field(key, value, indent, level, pad)
+    if isinstance(value, SxpbLone):
+        return _serialize_loneof_field(key, value, indent, level, pad)
+
+    return f"{pad}({key}{_serialize_field_body(value, indent, level)})"
 
 
 def _serialize_list_body(lst: Sequence, indent: int, level: int) -> str:

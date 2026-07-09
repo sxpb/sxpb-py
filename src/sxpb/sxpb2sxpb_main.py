@@ -1,5 +1,6 @@
 import argparse
 import sys
+from contextlib import ExitStack
 
 from lark.exceptions import LarkError
 
@@ -14,15 +15,13 @@ def main():
     parser.add_argument(
         "infile",
         nargs="?",
-        type=argparse.FileType("r"),
-        default=sys.stdin,
+        default=None,
         help="Input Sxpb file (stdin if not specified)",
     )
     parser.add_argument(
         "outfile",
         nargs="?",
-        type=argparse.FileType("w"),
-        default=sys.stdout,
+        default=None,
         help="Output Sxpb file (stdout if not specified)",
     )
     parser.add_argument(
@@ -38,15 +37,27 @@ def main():
     )
 
     args = parser.parse_args()
-    sxpb_content = args.infile.read()
 
     try:
-        sxpb_data = loads(sxpb_content, precise=True)
-        if not args.validate_only:
-            formatted_sxpb = dumps(sxpb_data, indent=args.indent)
-            args.outfile.write(formatted_sxpb)
-            if not formatted_sxpb.endswith("\n"):
-                args.outfile.write("\n")
+        with ExitStack() as stack:
+            infile = (
+                sys.stdin
+                if args.infile in (None, "-")
+                else stack.enter_context(open(args.infile, encoding="utf-8"))
+            )
+            outfile = (
+                sys.stdout
+                if args.outfile in (None, "-")
+                else stack.enter_context(open(args.outfile, "w", encoding="utf-8"))
+            )
+
+            sxpb_content = infile.read()
+            sxpb_data = loads(sxpb_content, precise=True)
+            if not args.validate_only:
+                formatted_sxpb = dumps(sxpb_data, indent=args.indent)
+                outfile.write(formatted_sxpb)
+                if not formatted_sxpb.endswith("\n"):
+                    outfile.write("\n")
     except LarkError as e:
         print("Validation failed:", file=sys.stderr)
         print(format_lark_error(e, sxpb_content), file=sys.stderr)
