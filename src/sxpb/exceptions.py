@@ -4,10 +4,11 @@ from lark.exceptions import LarkError
 TOKEN_TRANSLATIONS = {
     "BARE": "an unquoted word (e.g., key_name)",
     "BOOLEAN": "a boolean (+true or +false)",
+    "EMPTY_STRING": "an empty quoted string",
     "ESCAPED_STRING": 'a quoted string (e.g., "hello world")',
     "LPAR": "an opening parenthesis `(`",
     "MULTILINE_STRING": 'a multiline string (e.g., """...""")',
-    "NONEMPTY_ESCAPED_STRING": "a non-empty quoted string for a field name",
+    "NONEMPTY_ESCAPED_STRING": 'a quoted string (e.g., "hello world")',
     "PLAIN": "an unquoted string",
     "RPAR": "a closing parenthesis `)`",
     "SIGNED_NUMBER": "a number (e.g., 123, -4.5, +1e6)",

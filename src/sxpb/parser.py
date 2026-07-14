@@ -1,5 +1,4 @@
 import re
-import textwrap
 import json
 from collections import UserList
 from pathlib import Path
@@ -17,6 +16,61 @@ NUM_INT = re.compile(r"^[+-]?\d+$")
 NUM_FLOAT = re.compile(r"^[+-]?(?:\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$")
 
 Json = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
+
+
+_SIMPLE_ESCAPE_VALUES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+}
+
+
+def _decode_quoted_content(content: str) -> str:
+    result: list[str] = []
+    i = 0
+    while i < len(content):
+        char = content[i]
+        if char == "\r":
+            i += 1
+            continue
+        if char != "\\":
+            result.append(char)
+            i += 1
+            continue
+        if i + 1 >= len(content):
+            raise ValueError("Unterminated escape sequence in quoted string")
+
+        escaped = content[i + 1]
+        if escaped == "\n":
+            i += 2
+            continue
+        if escaped == "\r" and i + 2 < len(content) and content[i + 2] == "\n":
+            i += 3
+            continue
+        if escaped in _SIMPLE_ESCAPE_VALUES:
+            result.append(_SIMPLE_ESCAPE_VALUES[escaped])
+            i += 2
+            continue
+        if escaped == "u" and i + 6 <= len(content):
+            end = i + 6
+            first_codepoint = int(content[i + 2 : end], 16)
+            if (
+                0xD800 <= first_codepoint <= 0xDBFF
+                and content.startswith("\\u", end)
+                and end + 6 <= len(content)
+            ):
+                end += 6
+            result.append(json.loads(f'"{content[i:end]}"'))
+            i = end
+            continue
+        raise ValueError(f"Unknown escape sequence: \\{escaped}")
+    return "".join(result)
 
 
 class UnquotedString(str):
@@ -43,22 +97,13 @@ class SexpTransformer(Transformer):
         return n.value
 
     def NONEMPTY_ESCAPED_STRING(self, s):
-        # Uses json.loads to properly unescape string
-        return json.loads(s.value)
+        return _decode_quoted_content(s.value[1:-1])
 
     def ESCAPED_STRING(self, s):
-        # Uses json.loads to properly unescape string
-        return json.loads(s.value)
+        return _decode_quoted_content(s.value[1:-1])
 
     def MULTILINE_STRING(self, s):
-        val = s.value[3:-3]
-        if val.startswith("\\\n"):
-            val = val[2:]
-        elif val.startswith("\n"):
-            val = val[1:]
-        val = textwrap.dedent(val)
-        val = val.replace('\\"', '"')
-        return val
+        return _decode_quoted_content(s.value[3:-3])
 
     @v_args(inline=True)
     def manyof_item(self, a):
@@ -221,7 +266,7 @@ class SexpTransformer(Transformer):
 
     @v_args(inline=True)
     def nest_key(self, k: str) -> str:
-        # k can be UnquotedString (BARE) or str (ESCAPED_STRING etc)
+        # k can be UnquotedString (BARE) or str (quoted/multiline strings)
         if isinstance(k, UnquotedString):
             k = str(k)
         # anonymous_discriminated_string logic returns joined string, passed as is

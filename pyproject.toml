@@ -1,6 +1,6 @@
 [project]
 name = "sxpb"
-version = "0.0.1"
+version = "0.0.2"
 description = "S-expression protobuf data."
 readme = "README.md"
 license = { text = "0BSD" }
@@ -10,6 +10,7 @@ authors = [
 requires-python = ">=3.9"
 dependencies = [
     "lark>=1.2.2",
+    "pathspec>=0.12.1",
 ]
 
 [project.urls]
@@ -31,6 +32,8 @@ json2sxpb = "sxpb.json2sxpb_main:main"
 sxpb2json = "sxpb.sxpb2json_main:main"
 sxpb2sxpb = "sxpb.sxpb2sxpb_main:main"
 sxpb2xml = "sxpb.sxpb2xml_main:main"
+sxpb-tidy = "sxpb.sxpb_tidy_main:main"
+sxpb-lint = "sxpb.sxpb_lint_main:main"
 
 [tool.pdm]
 package-dir = "src"
@@ -45,9 +48,13 @@ dev = [
 [tool.pdm.scripts]
 check-format = "ruff check"
 check-type = "ty check"
-tidy = "ruff format"
-lint = {composite = ["check-format", "check-type"]}
+lint-sxpb = "sxpb-lint --ignore-file .gitignore"
+tidy-python = "ruff format"
+tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
+tidy = {composite = ["tidy-python", "tidy-sxpb"]}
+lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
 test = "pytest"
+tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]
 root = ["src", "test"]

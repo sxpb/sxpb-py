@@ -39,7 +39,7 @@ anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
 DICT_DISCRIM: /\(\s*\)/
 LIST_DISCRIM: /\(\s*\(\s*\)\s*\)/
 NEST_DISCRIM: /\(\s*""\s*\)/
-STRING_DISCRIM: "\"\""
+STRING_DISCRIM: /""(?!")/
 
 BOOLEAN: /\+true|\+false/
 
@@ -47,13 +47,14 @@ SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?/
 BARE: /(([-.]?[^-+.0123456789 \t\n\v\f\r;"()])|--|\.\.)([^ \t\n\v\f\r;"()]*)/
 PLAIN: /[^ \t\n\v\f\r;"()]+/
 
-NONEMPTY_ESCAPED_STRING: /"(\\.|[^"\\])+"/
+EMPTY_STRING: /""(?!")/
+NONEMPTY_ESCAPED_STRING: /"(\\(.|\n)|[^"\\])+"/
+ESCAPED_STRING: EMPTY_STRING | NONEMPTY_ESCAPED_STRING
 
 MULTILINE_STRING: /"""(.|\n)*?"""/
 
 LISP_COMMENT: ";" /[^\n]*/
 
-%import common.ESCAPED_STRING
 %import common.WS
 
 %ignore WS

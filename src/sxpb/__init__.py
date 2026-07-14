@@ -1,10 +1,11 @@
 """sxpb - read/write SxPB files (schema-agnostic)
 
-Exports: loads, loads_file, dumps, dump, to_json, from_json
+Exports: loads, load, dumps, dump, format_sxpb, to_json, from_json
 """
 
 from .parser import loads as loads, load as load
 from .serializer import dumps as dumps, dump as dump
+from .formatter import SxpbFormatError as SxpbFormatError, format_sxpb as format_sxpb
 from .jsonutil import to_json, from_json
 from .xml import to_xml
 from .types import (
@@ -20,6 +21,8 @@ __all__ = [
     "load",
     "dumps",
     "dump",
+    "format_sxpb",
+    "SxpbFormatError",
     "to_json",
     "from_json",
     "to_xml",

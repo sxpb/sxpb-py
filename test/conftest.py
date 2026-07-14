@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 
-def _run_cli_command(module, args, stdin_data=None):
+def _run_cli_command(module, args, stdin_data=None, cwd=None):
     cmd = [sys.executable, "-m", module] + args
     env = os.environ.copy()
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).resolve().parent.parent
     src_path = str(project_root / "src")
     python_path = env.get("PYTHONPATH")
     if python_path:
@@ -23,6 +23,7 @@ def _run_cli_command(module, args, stdin_data=None):
         text=True,
         encoding="utf-8",
         env=env,
+        cwd=cwd,
     )
     return result
 
@@ -39,5 +40,25 @@ def run_sxpb2sxpb_tool():
 def run_sxpb2json_tool():
     def _run(args, stdin_data=None):
         return _run_cli_command("sxpb.sxpb2json_main", args, stdin_data=stdin_data)
+
+    return _run
+
+
+@pytest.fixture
+def run_sxpb_tidy_tool():
+    def _run(args, stdin_data=None, cwd=None):
+        return _run_cli_command(
+            "sxpb.sxpb_tidy_main", args, stdin_data=stdin_data, cwd=cwd
+        )
+
+    return _run
+
+
+@pytest.fixture
+def run_sxpb_lint_tool():
+    def _run(args, stdin_data=None, cwd=None):
+        return _run_cli_command(
+            "sxpb.sxpb_lint_main", args, stdin_data=stdin_data, cwd=cwd
+        )
 
     return _run
