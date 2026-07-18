@@ -9,7 +9,6 @@ authors = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "lark>=1.2.2",
     "pathspec>=0.12.1",
 ]
 
@@ -17,15 +16,6 @@ dependencies = [
 Homepage = "https://github.com/sxpb/sxpb-py"
 Repository = "https://github.com/sxpb/sxpb-py"
 Issues = "https://github.com/sxpb/sxpb-py/issues"
-
-[build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
-
-[tool.pytest.ini_options]
-addopts = "-v"
-pythonpath = ["src", "test"]
-testpaths = ["test"]
 
 [project.scripts]
 json2sxpb = "sxpb.json2sxpb_main:main"
@@ -35,15 +25,24 @@ sxpb2xml = "sxpb.sxpb2xml_main:main"
 sxpb-tidy = "sxpb.sxpb_tidy_main:main"
 sxpb-lint = "sxpb.sxpb_lint_main:main"
 
-[tool.pdm]
-package-dir = "src"
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
-[tool.pdm.dev-dependencies]
+[dependency-groups]
 dev = [
+  "lark>=1.2.2",
   "pytest",
   "ruff",
   "ty",
 ]
+
+[tool.pdm]
+package-dir = "src"
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "test"]
+testpaths = ["test"]
 
 [tool.pdm.scripts]
 check-format = "ruff check"
@@ -53,7 +52,7 @@ tidy-python = "ruff format"
 tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
 tidy = {composite = ["tidy-python", "tidy-sxpb"]}
 lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
-test = "pytest"
+test = "pytest -q"
 tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]

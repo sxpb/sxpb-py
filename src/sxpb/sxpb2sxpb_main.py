@@ -2,9 +2,7 @@ import argparse
 import sys
 from contextlib import ExitStack
 
-from lark.exceptions import LarkError
-
-from .exceptions import format_lark_error
+from .exceptions import SxpbParseError
 from .parser import loads
 from .serializer import dumps
 
@@ -58,9 +56,9 @@ def main():
                 outfile.write(formatted_sxpb)
                 if not formatted_sxpb.endswith("\n"):
                     outfile.write("\n")
-    except LarkError as e:
+    except SxpbParseError as e:
         print("Validation failed:", file=sys.stderr)
-        print(format_lark_error(e, sxpb_content), file=sys.stderr)
+        print(e, file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"An unexpected error occurred:\n{e}", file=sys.stderr)

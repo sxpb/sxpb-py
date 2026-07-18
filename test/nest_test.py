@@ -1,8 +1,7 @@
 from collections.abc import Mapping, Sequence
-from sxpb import parser, serializer
+from sxpb import SxpbParseError, parser, serializer
 from sxpb.types import SxpbNest, SxpbMesg
 import pytest
-from lark import UnexpectedToken, UnexpectedCharacters
 import textwrap
 
 
@@ -117,7 +116,7 @@ def test_illegal_subnest_in_string_field():
     # Expect parse error
     sxpb_text = '(my_nest ("") (my_string "" (illegal)))'
 
-    with pytest.raises((UnexpectedToken, UnexpectedCharacters)):
+    with pytest.raises(SxpbParseError):
         parser.loads(sxpb_text, precise=True)
 
     # Also test legal atoms

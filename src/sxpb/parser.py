@@ -1,21 +1,80 @@
-import re
+"""Hand-rolled recursive descent parser for SxPB.
+
+Mirrors test/reference_parser/grammar.lark rule-for-rule.
+Produces SxPB types directly (SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbNest)
+without an intermediate parse tree or transformer.
+
+~100x faster than the Lark Earley parser.
+"""
+
+from __future__ import annotations
+
 import json
+import re
 from collections import UserList
-from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, cast
 
-import lark
-from lark import Lark, Token, Transformer, v_args
-
+from .exceptions import SxpbParseError
 from .jsonutil import to_plain_types
 from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNest
 
-GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
-LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
-NUM_INT = re.compile(r"^[+-]?\d+$")
-NUM_FLOAT = re.compile(r"^[+-]?(?:\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$")
-
 Json = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
+
+# ── tokenizer ────────────────────────────────────────────────────────────────
+
+# Character classification
+_WS = frozenset(" \t\n\r\f\v")
+_ATOM_END = _WS | frozenset('();"')
+
+
+class _Token:
+    """Lightweight token — just a (type, value, line) triple."""
+
+    __slots__ = ("kind", "value", "line")
+
+    def __init__(self, kind: str, value: Any, line: int) -> None:
+        self.kind = kind
+        self.value = value
+        self.line = line
+
+    def __repr__(self) -> str:
+        return f"Token({self.kind!r}, {self.value!r}, L{self.line})"
+
+
+# Token kinds matching grammar terminal names
+LPAREN = "LPAREN"
+RPAREN = "RPAREN"
+DICT_DISCRIM = "DICT_DISCRIM"  # ()
+LIST_DISCRIM = "LIST_DISCRIM"  # (())
+NEST_DISCRIM = "NEST_DISCRIM"  # ("")
+STRING_DISCRIM = "STRING_DISCRIM"  # ""
+BARE = "BARE"  # unquoted word (starts with non-digit/special)
+PLAIN = "PLAIN"  # any non-whitespace, non-paren chars
+QUOTED_STRING = "QUOTED_STRING"  # "..." (JSON-escaped)
+MULTILINE_STRING = "MULTILINE_STRING"  # """..."""
+NUMBER = "SIGNED_NUMBER"  # [+-]? digits (. digits)? ([eE][+-]? digits)?
+BOOLEAN = "BOOLEAN"  # +true | +false
+END = "END"  # end of input
+
+
+# Pre-compiled patterns for the tokenizer
+_RE_NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
+_RE_LIST_DISCRIM = re.compile(r"\(\s*\(\s*\)\s*\)")
+_RE_NEST_DISCRIM = re.compile(r'\(\s*""\s*\)')
+_RE_DICT_DISCRIM = re.compile(r"\(\s*\)")
+_RE_BARE = re.compile(
+    r"^(([-.]?[^-+.0123456789 \t\n\v\f\r;\"()])|--|\.\.)([^ \t\n\v\f\r;\"()]*)$"
+)
+_RE_PLAIN = re.compile(r"^[^\t\n\v\f\r;\"()]+$")
+
+
+class _SxpbSyntaxError(SxpbParseError):
+    """Parse error with line number context."""
+
+    def __init__(self, msg: str, line: int, near: str = "") -> None:
+        self.line = line
+        self.near = near
+        super().__init__(msg)
 
 
 _SIMPLE_ESCAPE_VALUES = {
@@ -32,6 +91,7 @@ _SIMPLE_ESCAPE_VALUES = {
 
 
 def _decode_quoted_content(content: str) -> str:
+    """Decode quoted content with the same rules as the grammar parser."""
     result: list[str] = []
     i = 0
     while i < len(content):
@@ -73,236 +133,974 @@ def _decode_quoted_content(content: str) -> str:
     return "".join(result)
 
 
-class UnquotedString(str):
-    pass
+def _tokenize(text: str):
+    """Yield tokens from SxPB source text.
 
+    Tokenizer processes characters directly.  Discriminators like ``()``,
+    ``(())``, ``(\"\")``, and ``\"\"`` are recognized as single tokens by
+    peeking ahead, which mirrors the priority behaviour of the Lark regex
+    terminals.
+    """
+    pos = 0
+    n = len(text)
+    line = 1
 
-class SexpTransformer(Transformer):
-    def BARE(self, s):
-        return UnquotedString(s.value)
+    while pos < n:
+        ch = text[pos]
 
-    def PLAIN(self, s):
-        return UnquotedString(s.value)
+        # Whitespace
+        if ch in _WS:
+            if ch == "\n":
+                line += 1
+            pos += 1
+            continue
 
-    @v_args(inline=True)
-    def BOOLEAN(self, b):
-        return b.value == "+true"
+        # Comment
+        if ch == ";":
+            while pos < n and text[pos] != "\n":
+                pos += 1
+            continue
 
-    @v_args(inline=True)
-    def SIGNED_NUMBER(self, n):
-        if NUM_INT.match(n.value):
-            return int(n.value)
-        if NUM_FLOAT.match(n.value):
-            return float(n.value)
-        return n.value
-
-    def NONEMPTY_ESCAPED_STRING(self, s):
-        return _decode_quoted_content(s.value[1:-1])
-
-    def ESCAPED_STRING(self, s):
-        return _decode_quoted_content(s.value[1:-1])
-
-    def MULTILINE_STRING(self, s):
-        return _decode_quoted_content(s.value[3:-3])
-
-    @v_args(inline=True)
-    def manyof_item(self, a):
-        return a
-
-    @v_args(inline=True)
-    def field_name(self, a):
-        if isinstance(a, UnquotedString):
-            return str(a)
-        return a
-
-    def string_body(self, atoms):
-        string_parts = []
-        for i, v in enumerate(atoms):
-            string_parts.append(v)
-            if i + 1 < len(atoms):
-                is_unquoted = isinstance(v, UnquotedString)
-                next_v = atoms[i + 1]
-                next_is_unquoted = isinstance(next_v, UnquotedString)
-                if is_unquoted and next_is_unquoted:
-                    string_parts.append(" ")
-        return "".join(string_parts)
-
-    def scalar_body(self, items):
-        val = items[0]
-        if isinstance(val, UnquotedString):
-            return str(val)
-        return val
-
-    def message_body(self, fields):
-        message = SxpbMesg()
-        for key, val in fields:
-            if key in message:
-                if not isinstance(message[key], UserList):
-                    message[key] = SxpbList([message[key]])
-                if isinstance(val, UserList):
-                    message[key].extend(val)
-                else:
-                    message[key].append(val)
+        # Discriminators tolerate whitespace internally, but not comments.
+        if ch == "(":
+            for kind, pattern in (
+                (LIST_DISCRIM, _RE_LIST_DISCRIM),
+                (NEST_DISCRIM, _RE_NEST_DISCRIM),
+                (DICT_DISCRIM, _RE_DICT_DISCRIM),
+            ):
+                match = pattern.match(text, pos)
+                if match is not None:
+                    lexeme = match.group()
+                    yield _Token(kind, None, line)
+                    line += lexeme.count("\n")
+                    pos = match.end()
+                    break
             else:
-                message[key] = val
-        return message
+                match = None
+            if match is not None:
+                continue
 
-    @v_args(inline=True)
-    def start(self, body):
-        return body
+        # STRING_DISCRIM: ""
+        if (
+            ch == '"'
+            and pos + 1 < n
+            and text[pos + 1] == '"'
+            and (pos + 2 >= n or text[pos + 2] != '"')
+        ):
+            yield _Token(STRING_DISCRIM, None, line)
+            pos += 2
+            continue
 
-    def regular_field(self, items):
-        key, value = items
+        # Structural parens
+        if ch == "(":
+            yield _Token(LPAREN, None, line)
+            pos += 1
+            continue
+        if ch == ")":
+            yield _Token(RPAREN, None, line)
+            pos += 1
+            continue
+
+        # Multiline string: """..."""
+        if ch == '"' and pos + 2 < n and text[pos : pos + 3] == '"""':
+            pos += 3  # skip opening """
+            start = pos
+            while pos + 2 < n and text[pos : pos + 3] != '"""':
+                if text[pos] == "\n":
+                    line += 1
+                pos += 1
+            if pos + 2 >= n:
+                raise _SxpbSyntaxError(
+                    "Unterminated multiline string", line, text[start : start + 20]
+                )
+            raw = text[start:pos]
+            pos += 3  # skip closing """
+            try:
+                value = _decode_quoted_content(raw)
+            except ValueError as e:
+                raise _SxpbSyntaxError(str(e), line, raw[:20]) from e
+            yield _Token(MULTILINE_STRING, value, line)
+            continue
+
+        # Quoted string: "..." (JSON-style escaping)
+        if ch == '"':
+            pos += 1  # skip opening quote
+            start = pos
+            while pos < n and text[pos] != '"':
+                if text[pos] == "\\" and pos + 1 < n:
+                    pos += 2  # skip escape sequence
+                else:
+                    if text[pos] == "\n":
+                        line += 1
+                    pos += 1
+            if pos >= n:
+                raise _SxpbSyntaxError(
+                    "Unterminated quoted string", line, text[start - 1 : start + 20]
+                )
+            raw = text[start:pos]
+            pos += 1  # skip closing quote
+            try:
+                value = _decode_quoted_content(raw)
+            except ValueError as e:
+                raise _SxpbSyntaxError(str(e), line, raw[:20]) from e
+            yield _Token(QUOTED_STRING, value, line)
+            continue
+
+        # Boolean: +true or +false. Require an atom boundary so malformed
+        # values such as +trueish are not tokenized as a boolean plus a word.
+        if ch == "+":
+            if text.startswith("+true", pos) and (
+                pos + 5 == n or text[pos + 5] in _ATOM_END
+            ):
+                yield _Token(BOOLEAN, True, line)
+                pos += 5
+                continue
+            if text.startswith("+false", pos) and (
+                pos + 6 == n or text[pos + 6] in _ATOM_END
+            ):
+                yield _Token(BOOLEAN, False, line)
+                pos += 6
+                continue
+
+        # Number or signed atom: [+-]?digits...
+        if (
+            ch in "+-"
+            or ch.isdigit()
+            or (ch == "." and pos + 1 < n and text[pos + 1].isdigit())
+        ):
+            end = pos
+            # Greedy match of number-like characters
+            while end < n and text[end] not in _ATOM_END:
+                end += 1
+            token = text[pos:end]
+            if _RE_NUMBER.match(token):
+                val = int(token) if re.match(r"^[+-]?\d+$", token) else float(token)
+                yield _Token(NUMBER, (val, token), line)
+            elif _RE_BARE.match(token):
+                yield _Token(BARE, token, line)
+            else:
+                yield _Token(PLAIN, token, line)
+            pos = end
+            continue
+
+        # Bare word
+        end = pos
+        while end < n and text[end] not in _ATOM_END:
+            end += 1
+        token = text[pos:end]
+        kind = BARE if _RE_BARE.match(token) else PLAIN
+        yield _Token(kind, token, line)
+        pos = end
+
+    yield _Token(END, None, line)
+
+
+# ── parser ───────────────────────────────────────────────────────────────────
+#
+# Each function mirrors a rule from test/reference_parser/grammar.lark.
+# Tokens are consumed from a shared _ParserState.
+
+
+class _ParserState:
+    """Mutable parse state: token stream + position."""
+
+    __slots__ = ("tokens", "pos", "_saved")
+
+    def __init__(self, tokens: list[_Token]) -> None:
+        self.tokens = tokens
+        self.pos = 0
+        self._saved: int = 0
+
+    def peek(self) -> _Token:
+        return self.tokens[self.pos]
+
+    def next(self) -> _Token:
+        t = self.tokens[self.pos]
+        self.pos += 1
+        return t
+
+    def peek_ahead(self, offset: int = 1) -> _Token:
+        """Peek at token at pos+offset without advancing."""
+        idx = self.pos + offset
+        if idx >= len(self.tokens):
+            return self.tokens[-1]  # END token
+        return self.tokens[idx]
+
+    def expect(self, kind: str) -> _Token:
+        t = self.next()
+        if t.kind != kind:
+            if t.kind == END and kind == RPAREN:
+                msg = (
+                    "Unexpected end of input.\n\n"
+                    "Expected one of the following:\n"
+                    "  - a closing parenthesis `)`\n"
+                )
+            elif t.kind == END:
+                msg = f"Unexpected end of input (expected {kind})"
+            else:
+                msg = f"Expected {kind}, found {t.kind} ({t.value!r})"
+            raise _SxpbSyntaxError(msg, t.line)
+        return t
+
+    def at_end(self) -> bool:
+        return self.peek().kind == END
+
+    def save(self) -> None:
+        self._saved = self.pos
+
+    def restore(self) -> None:
+        self.pos = self._saved
+
+    def skip_newlines(self) -> None:
+        """Skip blank lines between toplevel expressions."""
+        while self.peek().kind == END:
+            return  # actual end
+        # END is the real sentinel; blank lines are just whitespace (already skipped)
+
+
+# ── toplevel dispatch ────────────────────────────────────────────────────────
+
+# start: message_body
+#       | discriminated_array
+#       | discriminated_dict
+#       | discriminated_manyof
+#       | discriminated_nest
+#
+# The parser detects which rule to use by looking at the first token.
+
+
+def _parse_start(st: _ParserState) -> Any:
+    t = st.peek()
+    if t.kind == LIST_DISCRIM:
+        # Could be discriminated_array or discriminated_manyof.
+        # We peek past LIST_DISCRIM to decide.
+        return _parse_discriminated_list(st)
+    elif t.kind == DICT_DISCRIM:
+        return _parse_discriminated_dict(st)
+    elif t.kind == NEST_DISCRIM:
+        return _parse_discriminated_nest(st)
+    elif t.kind == END:
+        raise _SxpbSyntaxError("Unexpected end of input", 0)
+    elif t.kind == RPAREN:
+        t = st.next()
+        raise _SxpbSyntaxError(
+            "Found an unexpected character ')'.\n\n"
+            "Expected one of the following:\n"
+            "  - an opening parenthesis `(`\n",
+            t.line,
+        )
+    else:
+        # Must be message_body — return as toplevel Mesg
+        return SxpbMesg(_parse_message_body(st, allow_empty=True))
+
+
+# ── discriminators ───────────────────────────────────────────────────────────
+
+# discriminated_array: LIST_DISCRIM array_body
+# discriminated_manyof: LIST_DISCRIM any_field*
+#
+# These share a LIST_DISCRIM prefix.  We merge them into one parse function
+# and disambiguate by inspecting the content.
+
+
+def _parse_discriminated_list(st: _ParserState, stop_kind: str = END) -> Any:
+    """Parse LIST_DISCRIM ... as either discriminated_array or discriminated_manyof.
+
+    stop_kind indicates which token stops the list:
+    - END for toplevel (no closing paren)
+    - RPAREN when the list is a field value
+    """
+    st.expect(LIST_DISCRIM)
+    if st.peek().kind == END or st.peek().kind == RPAREN:
+        return SxpbList()
+
+    t = st.peek()
+    if t.kind == DICT_DISCRIM:
+        return _parse_array_body(st)
+    elif t.kind in (NUMBER, BOOLEAN, QUOTED_STRING, MULTILINE_STRING):
+        # Scalar array (numbers, booleans, or strings)
+        return _parse_array_body(st)
+    elif t.kind == STRING_DISCRIM:
+        # discriminated string → string array
+        return _parse_array_body(st)
+    elif t.kind in (BARE, PLAIN):
+        return _parse_array_body(st)
+    elif t.kind == LPAREN:
+        # Ambiguous: could be an array of messages or a manyof.
+        # Parse with list-item disambiguation.
+        return _parse_discriminated_list_content(st, stop_kind)
+    else:
+        return SxpbList()
+
+
+def _parse_array_body(
+    st: _ParserState, already_have_discriminators: bool = False
+) -> SxpbList:
+    """array_body: message_array_body | SIGNED_NUMBER* | BOOLEAN* | string_array_body.
+
+    Called after LIST_DISCRIM has been consumed (already_have_discriminators=True)
+    or inside a regular_field context.
+    """
+    result = SxpbList()
+    string_mode = False
+    scalar_spellings: dict[int, str] = {}
+
+    def enter_string_mode() -> None:
+        nonlocal string_mode
+        if string_mode:
+            return
+        string_mode = True
+        for index, spelling in scalar_spellings.items():
+            result[index] = spelling
+
+    while not st.at_end():
+        t = st.peek()
+        if t.kind == RPAREN:
+            break
+        if t.kind == END:
+            break
+
+        if t.kind == DICT_DISCRIM:
+            # empty_message or start of anonymous_discriminated_message
+            _parse_message_array_item(st, result)
+        elif t.kind == LPAREN:
+            # anonymous_discriminated_message or anonymous_discriminated_string
+            _parse_message_array_item(st, result)
+        elif t.kind == STRING_DISCRIM:
+            enter_string_mode()
+            _parse_string_array_item(st, result)
+        elif t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE, PLAIN):
+            enter_string_mode()
+            _parse_string_array_item(st, result)
+        elif t.kind == NUMBER:
+            spelling = t.value[1]
+            result.append(spelling if string_mode else t.value[0])
+            scalar_spellings[len(result) - 1] = spelling
+            st.next()
+        elif t.kind == BOOLEAN:
+            spelling = "+true" if t.value else "+false"
+            result.append(spelling if string_mode else t.value)
+            scalar_spellings[len(result) - 1] = spelling
+            st.next()
+        else:
+            break
+
+    return result
+
+
+def _parse_message_array_item(st: _ParserState, result: SxpbList) -> None:
+    """empty_message | anonymous_discriminated_message."""
+    t = st.peek()
+    if t.kind == DICT_DISCRIM:
+        st.next()
+        # empty_message: just a ()
+        result.append(SxpbMesg())
+    elif t.kind == LPAREN:
+        st.next()
+        t2 = st.peek()
+        if t2.kind == DICT_DISCRIM:
+            # anonymous_discriminated_message: ( () message_body )
+            st.next()  # consume DICT_DISCRIM
+            body = _parse_message_body(st, allow_empty=True)
+            st.expect(RPAREN)
+            result.append(body)
+        elif t2.kind == STRING_DISCRIM:
+            # anonymous_discriminated_string: ( "" ... )
+            val = _parse_discriminated_string(st)
+            st.expect(RPAREN)
+            result.append(val)
+        else:
+            raise _SxpbSyntaxError(
+                f'Expected () or ("") in array body, got {t2.kind}',
+                t2.line,
+            )
+
+
+def _parse_string_array_item(st: _ParserState, result: SxpbList) -> None:
+    """Parse one item of string_array_body."""
+    t = st.peek()
+    if t.kind == STRING_DISCRIM:
+        st.next()
+        val = _parse_string_body(st, discriminated=True)
+        result.append(val)
+    elif t.kind == LPAREN:
+        # anonymous_discriminated_string: ( "" ... )
+        st.next()
+        st.expect(STRING_DISCRIM)
+        val = _parse_string_body(st, discriminated=True)
+        st.expect(RPAREN)
+        result.append(val)
+    elif t.kind in (QUOTED_STRING, MULTILINE_STRING):
+        result.append(t.value)
+        st.next()
+    elif t.kind in (BARE, PLAIN):
+        result.append(t.value)
+        st.next()
+    elif t.kind == NUMBER:
+        result.append(t.value[1])
+        st.next()
+    elif t.kind == BOOLEAN:
+        result.append("+true" if t.value else "+false")
+        st.next()
+
+
+def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) -> Any:
+    """Disambiguate discriminated_array vs discriminated_manyof by content.
+
+    stop_kind: END for toplevel, RPAREN for nested (closes enclosing field).
+    """
+    items: list[Any] = []
+    saw_non_field = False
+
+    while not st.at_end():
+        t = st.peek()
+        if t.kind == END:
+            break
+        if t.kind == RPAREN and stop_kind == RPAREN:
+            break
+
+        item = _parse_list_item(st)
+        if item is None:
+            break
+        items.append(item)
+        if not isinstance(item, (tuple, SxpbLone, SxpbMany)):
+            saw_non_field = True
+
+    if not items:
+        return SxpbList()
+
+    if saw_non_field:
+        # It's an array of scalars or messages
+        return SxpbList(items)
+    else:
+        # It's a manyof — wrap as SxpbMany of SxpbLone
+        many_items = []
+        for item in items:
+            if isinstance(item, tuple):
+                many_items.append(SxpbLone({item[0]: item[1]}))
+            elif isinstance(item, SxpbLone):
+                many_items.append(item)
+            elif isinstance(item, SxpbMany):
+                # A discriminated_manyof inside manyof produces SxpbMany directly
+                many_items.append(item)
+            else:
+                many_items.append(SxpbLone({"value": item}))
+        return SxpbMany(many_items)
+
+
+def _parse_list_item(st: _ParserState) -> Any:
+    """list_item: SIGNED_NUMBER | BOOLEAN | ESCAPED_STRING | MULTILINE_STRING
+    | BARE | PLAIN | empty_message | anonymous_discriminated_message
+    | anonymous_discriminated_string | any_field.
+    """
+    t = st.peek()
+    if t.kind == NUMBER:
+        st.next()
+        return t.value[0]
+    if t.kind == BOOLEAN:
+        st.next()
+        return t.value
+    if t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE):
+        st.next()
+        return t.value
+    if t.kind == STRING_DISCRIM:
+        # anonymous_discriminated_string or bare string in array
+        return _parse_discriminated_string(st)
+    if t.kind == LPAREN:
+        st.next()
+        inner = st.peek()
+        if inner.kind == DICT_DISCRIM:
+            # anonymous_discriminated_message: ( () message_body )
+            st.next()
+            body = _parse_message_body(st, allow_empty=True)
+            st.expect(RPAREN)
+            return body
+        if inner.kind == STRING_DISCRIM:
+            # anonymous_discriminated_string: ( "" ... )
+            val = _parse_discriminated_string(st)
+            st.expect(RPAREN)
+            return val
+        # any_field — _parse_any_field_content leaves pos at RPAREN.
+        # We must consume it (unlike _parse_any_field which does).
+        result = _parse_any_field_content(st)
+        st.expect(RPAREN)
+        return result
+    if t.kind == DICT_DISCRIM:
+        st.next()
+        return SxpbMesg()
+    return None
+
+
+# ── discriminated_dict ───────────────────────────────────────────────────────
+
+# discriminated_dict: DICT_DISCRIM message_body
+
+
+def _parse_discriminated_dict(st: _ParserState) -> SxpbDict:
+    st.expect(DICT_DISCRIM)
+    return SxpbDict(_parse_message_body(st, allow_empty=True))
+
+
+# ── discriminated_nest ───────────────────────────────────────────────────────
+
+# discriminated_nest: NEST_DISCRIM nest_body
+
+
+def _parse_discriminated_nest(st: _ParserState) -> SxpbNest:
+    st.expect(NEST_DISCRIM)
+    return _parse_nest_body(st)
+
+
+# ── discriminated_string ─────────────────────────────────────────────────────
+
+# discriminated_string: STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
+
+
+def _parse_discriminated_string(st: _ParserState) -> str:
+    st.expect(STRING_DISCRIM)
+    return _parse_string_body(st, discriminated=True)
+
+
+def _parse_string_body(st: _ParserState, discriminated: bool = False) -> str:
+    """string_body: ( ESCAPED_STRING | MULTILINE_STRING | BARE )*
+                 ( ESCAPED_STRING | MULTILINE_STRING | PLAIN )*
+
+    In discriminated mode (after STRING_DISCRIM has been consumed),
+    all tokens act like PLAIN and get spaces between them.
+    """
+    parts: list[str] = []
+    prev_was_unquoted = False
+
+    while not st.at_end():
+        t = st.peek()
+        if t.kind in (QUOTED_STRING, MULTILINE_STRING):
+            parts.append(t.value)
+            st.next()
+            prev_was_unquoted = False
+        elif t.kind in (BARE, PLAIN):
+            if t.kind == PLAIN and not parts and not discriminated:
+                break
+            if prev_was_unquoted:
+                parts.append(" ")
+            parts.append(t.value)
+            st.next()
+            prev_was_unquoted = True
+        elif t.kind == STRING_DISCRIM:
+            st.next()
+            prev_was_unquoted = False
+        elif t.kind == NUMBER:
+            if prev_was_unquoted:
+                parts.append(" ")
+            parts.append(t.value[1])
+            st.next()
+            prev_was_unquoted = True
+        elif t.kind == BOOLEAN:
+            if prev_was_unquoted:
+                parts.append(" ")
+            parts.append("+true" if t.value else "+false")
+            st.next()
+            prev_was_unquoted = True
+        else:
+            break
+
+    return "".join(parts)
+
+
+# ── message_body ─────────────────────────────────────────────────────────────
+
+# message_body: any_field*
+
+
+def _parse_message_body(st: _ParserState, allow_empty: bool = False) -> SxpbMesg:
+    """Parse any_field* and combine into a SxpbMesg."""
+    msg = SxpbMesg()
+    while not st.at_end():
+        t = st.peek()
+        if t.kind == RPAREN:
+            break
+        if t.kind == END:
+            break
+        if t.kind == LPAREN:
+            field = _parse_any_field(st)
+            if field is not None:
+                key, value = field
+                _merge_field_into_message(msg, key, value)
+        elif t.kind == DICT_DISCRIM:
+            # Empty field? Skip or treat as empty dict field
+            st.next()
+        else:
+            raise _SxpbSyntaxError(
+                f"Unexpected token outside field: {t.kind} ({t.value!r})",
+                t.line,
+            )
+
+    return msg
+
+
+def _merge_field_into_message(msg: SxpbDict | SxpbMesg, key: str, value: Any) -> None:
+    """Add a field to a message, accumulating duplicate keys into SxpbLists."""
+    if key in msg:
+        existing = msg[key]
+        if not isinstance(existing, UserList):
+            msg[key] = SxpbList([existing])
+        if isinstance(value, UserList):
+            msg[key].extend(value)
+        else:
+            msg[key].append(value)
+    else:
+        msg[key] = value
+
+
+# ── any_field ────────────────────────────────────────────────────────────────
+
+# any_field: regular_field | loneof_field | manyof_field
+#
+# All start with LPAREN, but we disambiguate after consuming the first field_name.
+
+
+def _parse_any_field(st: _ParserState) -> tuple[str, Any] | None:
+    """Parse a complete field: LPAREN ... RPAREN → (key, value).
+
+    ALWAYS consumes both LPAREN and RPAREN.
+    """
+    st.expect(LPAREN)
+    result = _parse_any_field_content(st)
+    st.expect(RPAREN)
+    return result
+
+
+def _parse_any_field_content(st: _ParserState) -> tuple[str, Any] | None:
+    """Parse field content after LPAREN consumed; leaves position at RPAREN.
+
+    IMPORTANT: does NOT consume the outer RPAREN.  Callers must do that.
+    """
+    t = st.peek()
+
+    # After outer LPAREN, seeing LPAREN again means:
+    #   loneof:   ((key subkey) value)
+    #   manyof:   ((key) item1 item2 ...)
+    if t.kind == LPAREN:
+        st.next()  # consume inner LPAREN
+        key = _parse_field_name(st)
+        if st.peek().kind == RPAREN:
+            # manyof short form: ((key) item*)
+            st.next()  # consume RPAREN closing (key)
+            items = _parse_manyof_items(st)
+            # _parse_manyof_items stops at the field's closing RPAREN (unconsumed).
+            if not items:
+                return key, SxpbMany()
+            many_items: list = []
+            for item in items:
+                if isinstance(item, tuple):
+                    many_items.append(SxpbLone({item[0]: item[1]}))
+                else:
+                    many_items.append(SxpbLone({"value": item}))
+            return key, SxpbMany(many_items)
+        else:
+            # loneof: ((key subkey) value)
+            subkey = _parse_field_name(st)
+            st.expect(RPAREN)  # close (key subkey)
+            value = _parse_field_value(st)
+            return key, SxpbLone({subkey: value})
+
+    # regular_field or manyof_field option 1: (field_name ...)
+    key = _parse_field_name(st)
+
+    if st.peek().kind == RPAREN:
+        # (field_name) — empty value
+        return key, SxpbMesg()
+
+    if st.peek().kind == LIST_DISCRIM:
+        # manyof_field option 1: (field_name LIST_DISCRIM any_field*)
+        value = _parse_discriminated_list(st, stop_kind=RPAREN)
         return key, value
 
-    def loneof_field(self, items):
-        loneof_name, value = items
-        key, subkey = loneof_name
-        return key, SxpbLone({subkey: value})
+    # regular_field value
+    value = _parse_field_value(st)
+    return key, value
 
-    def manyof_field(self, items):
-        name = items[0]
-        if len(items) == 1:
-            return name, SxpbMany()
 
-        body = items[1:]
-        if not body:
-            return name, SxpbMany()
+# ── field parsing helpers ────────────────────────────────────────────────────
 
-        # `body` can be a list from discriminated_manyof (result is SxpbMany),
-        # or a Token from atom+, or a tuple from any_field*
-        if isinstance(body[0], SxpbMany):  # discriminated_manyof
-            return name, body[0]
 
-        # The body is from (atom | any_field)*
-        new_body = []
-        for item in body:
-            if isinstance(item, tuple):
-                new_body.append(SxpbLone({item[0]: item[1]}))
-            else:
-                new_body.append(SxpbLone({"value": item}))
-        return name, SxpbMany(new_body)
+def _parse_field_name(st: _ParserState) -> str:
+    """field_name: BARE | NONEMPTY_ESCAPED_STRING."""
+    t = st.next()
+    if t.kind in (BARE, QUOTED_STRING):
+        return str(t.value)
+    if t.kind == STRING_DISCRIM:
+        raise _SxpbSyntaxError("Found an unexpected character '\"'.", t.line)
+    raise _SxpbSyntaxError(
+        f"Expected field name, found {t.kind} ({t.value!r})",
+        t.line,
+    )
 
-    def loneof_name(self, items):
-        return items
 
-    def discriminated_dict(self, items):
-        # items[0] is DICT_DISCRIM, items[1] is message_body
-        return SxpbDict(items[1])
+def _parse_field_value(st: _ParserState) -> Any:
+    """Parse the value part of a field: scalar_body | message_body | discriminated_*.
 
-    def discriminated_manyof(self, items):
-        # items[0] might be LIST_DISCRIM if it's passed through
-        start_idx = 0
-        if items and isinstance(items[0], Token) and items[0].type == "LIST_DISCRIM":
-            start_idx = 1
+    IMPORTANT: This function NEVER consumes the outer RPAREN of the enclosing
+    field.  The caller (_parse_any_field_content) always does st.expect(RPAREN)
+    after this returns.
+    """
+    t = st.peek()
 
-        # Filter out remaining items
-        items = items[start_idx:]
-
-        return SxpbMany([SxpbLone({item[0]: item[1]}) for item in items])
-
-    def any_field(self, items):
-        return items[0]
-
-    def empty_message(self, _):
+    if t.kind == RPAREN:
+        # message_body is allowed to be empty, including as a loneof value.
         return SxpbMesg()
 
-    def anonymous_discriminated_message(self, items):
-        # items: [empty_message_result, message_body_result] -> [{}, dict]
-        return items[1]
+    if t.kind == LPAREN:
+        # Peek at token AFTER LPAREN to identify the value type without consuming.
+        inner = st.peek_ahead(1)
 
-    def message_array_body(self, items):
-        # items: list of dicts (from empty_message or anonymous_discriminated_message)
-        return SxpbList(items)
+        if inner.kind == LIST_DISCRIM:
+            st.next()  # consume LPAREN, leaving LIST_DISCRIM for _parse_discriminated_list
+            return _parse_discriminated_list(st, stop_kind=RPAREN)
 
-    def discriminated_string(self, items):
-        # items[0] is STRING_DISCRIM (marker)
-        # items[1:] is content
-        return self.string_body(items[1:])
+        if inner.kind == DICT_DISCRIM:
+            st.next()  # consume LPAREN
+            st.next()  # consume DICT_DISCRIM
+            # Parse message_body (fields), stop before outer RPAREN
+            return SxpbDict(_parse_message_body(st, allow_empty=True))
 
-    def anonymous_discriminated_string(self, items):
-        return self.string_body(items[1:])
+        if inner.kind == NEST_DISCRIM:
+            st.next()  # consume LPAREN, leaving NEST_DISCRIM
+            return _parse_discriminated_nest(st)
 
-    def string_array_body(self, items):
-        # The transformer has already processed the terminal tokens into strings or UnquotedString objects.
-        # Per the project's requirements, if any element in an array is a string, all elements are converted to strings.
-        # Since all children of the `string_array_body` rule are string-like, we just convert them all.
-        return SxpbList([str(item) for item in items])
+        if inner.kind == RPAREN:
+            st.next()  # consume LPAREN
+            st.next()  # consume RPAREN → empty dict "()"
+            return SxpbDict()
 
-    def discriminated_array(self, items):
-        # items[0] is LIST_DISCRIM, items[1] is array_body result
-        return items[1]
+        if inner.kind == STRING_DISCRIM:
+            st.next()  # consume LPAREN
+            return _parse_discriminated_string(st)
 
-    def array_body(self, items):
-        # The items will either be:
-        # 1. A single SxpbList from message_array_body
-        # 2. A single SxpbList from string_array_body
-        # 3. A list of numbers or booleans (directly in items)
+        # Regular nested value: message_body (field* container).
+        # Don't consume LPAREN — _parse_message_body calls _parse_any_field
+        # which consumes the LPAREN and matching RPAREN.
+        return _parse_message_body(st, allow_empty=True)
 
-        if items and isinstance(items[0], SxpbList):
-            # Case 1 or 2
-            return items[0]
+    if t.kind == NUMBER:
+        st.next()
+        return t.value[0]
 
-        # Case 3 (or empty fallthrough)
-        if items and isinstance(items[0], Token) and items[0].type == "SIGNED_NUMBER":
-            return SxpbList([self.SIGNED_NUMBER(i) for i in items])
-        if items and isinstance(items[0], Token) and items[0].type == "BOOLEAN":
-            return SxpbList([self.BOOLEAN(i) for i in items])
+    if t.kind == BOOLEAN:
+        st.next()
+        return t.value
 
-        # Fallback for empty array or heterogenous (if grammar allowed it, which it doesn't really)
-        # If empty, items is empty list here.
-        return SxpbList(items)
+    if t.kind in (QUOTED_STRING, MULTILINE_STRING):
+        return _parse_string_body(st)
 
-    def discriminated_nest(self, items):
-        # items: [NEST_DISCRIM, nest_body]
-        return items[-1]
+    if t.kind == BARE:
+        return _parse_string_body(st)
 
-    def nest_body(self, items):
-        return SxpbNest(items)
+    if t.kind == STRING_DISCRIM:
+        return _parse_discriminated_string(st)
 
-    def nest_item(self, items):
-        # items[0] is the result of nest_key | nest_subfield | discriminated_string_field
-        return items[0]
+    if t.kind == LIST_DISCRIM:
+        return _parse_discriminated_list(st, stop_kind=RPAREN)
 
-    @v_args(inline=True)
-    def nest_key(self, k: str) -> str:
-        # k can be UnquotedString (BARE) or str (quoted/multiline strings)
-        if isinstance(k, UnquotedString):
-            k = str(k)
-        # anonymous_discriminated_string logic returns joined string, passed as is
-        return k
+    if t.kind == DICT_DISCRIM:
+        return _parse_discriminated_dict(st)
 
-    def nest_subfield(self, items):
-        # items: [field_name, nest_body]
-        key = items[0]
-        body = items[-1]
+    if t.kind == NEST_DISCRIM:
+        return _parse_discriminated_nest(st)
+
+    raise _SxpbSyntaxError(
+        f"Unexpected token in field value: {t.kind} ({t.value!r})",
+        t.line,
+    )
+
+
+def _parse_manyof_items(st: _ParserState) -> list[Any]:
+    """manyof_item* after the (key) header in manyof short form."""
+    items: list[Any] = []
+    while not st.at_end():
+        t = st.peek()
+        if t.kind == RPAREN:
+            break
+        if t.kind == END:
+            break
+
+        item = _parse_list_item(st)
+        if item is not None:
+            items.append(item)
+        else:
+            # Couldn't parse — stop
+            break
+    return items
+
+
+# ── nest ─────────────────────────────────────────────────────────────────────
+
+# nest_body: nest_item*
+# nest_item: nest_key | nest_subfield | discriminated_string_field
+#            | anonymous_discriminated_string | anonymous_discriminated_nest
+
+
+def _parse_nest_body(st: _ParserState) -> SxpbNest:
+    """Parse a nest body (already inside a nest, discriminator consumed)."""
+    nest = SxpbNest()
+    while not st.at_end():
+        t = st.peek()
+        if t.kind == RPAREN:
+            break
+        if t.kind == END:
+            break
+        item = _parse_nest_item(st)
+        if item is not None:
+            nest.append(item)
+    return nest
+
+
+def _parse_nest_item(st: _ParserState) -> Any:
+    """Parse a single nest item."""
+    t = st.peek()
+
+    if t.kind in (BARE, PLAIN, QUOTED_STRING, MULTILINE_STRING):
+        # nest_key: a bare string key
+        st.next()
+        return str(t.value)
+
+    if t.kind == NUMBER:
+        # Treat numbers as string keys in nest context
+        st.next()
+        return t.value[1]
+
+    if t.kind == LPAREN:
+        st.next()
+        inner = st.peek()
+
+        if inner.kind == RPAREN:
+            raise _SxpbSyntaxError("Unexpected empty parens in nest", inner.line)
+
+        if inner.kind == STRING_DISCRIM:
+            # Could be:
+            #   - discriminated_string_field: (field_name "")
+            #   - anonymous_discriminated_string: ("" ...)
+            #   - anonymous_discriminated_nest: ("" ("") ...)
+            #   - nest_subfield with STRING_DISCRIM before nest body
+            st.next()  # consume STRING_DISCRIM
+
+            # What follows STRING_DISCRIM?
+            after = st.peek()
+            if after.kind == NEST_DISCRIM:
+                # ("" ("") ...) → anonymous discriminated nest
+                st.next()  # consume NEST_DISCRIM
+                body = _parse_nest_body(st)
+                st.expect(RPAREN)  # close inner paren
+                return SxpbLone({"": body})  # wrap as lone for nest
+            elif after.kind == RPAREN:
+                # ("" ) — just an empty string discriminator
+                st.next()  # consume RPAREN
+                return ""
+            else:
+                # ( "" ... ) → anonymous discriminated string
+                val = _parse_string_body(st, discriminated=True)
+                st.expect(RPAREN)
+                return val
+
+        if inner.kind == NEST_DISCRIM:
+            # anonymous_discriminated_nest: ( ("") nest_body )
+            st.next()  # consume NEST_DISCRIM
+            body = _parse_nest_body(st)
+            st.expect(RPAREN)
+            return SxpbLone({"": body})
+
+        # Regular nest_subfield: ( field_name nest_body )
+        # or: ( field_name NEST_DISCRIM nest_body )
+        # or: ( field_name "" string_body )
+        key = _parse_field_name(st)
+
+        after_key = st.peek()
+        if after_key.kind == RPAREN:
+            # (key ) — empty nest subfield (key -> None)
+            st.next()
+            return SxpbLone({key: SxpbNest()})
+
+        if after_key.kind == NEST_DISCRIM:
+            # (key ("")) — explicit nest discriminator
+            st.next()
+            body = _parse_nest_body(st)
+            st.expect(RPAREN)
+            return SxpbLone({key: body})
+
+        if after_key.kind == STRING_DISCRIM:
+            # (key "" string_body) — discriminated string field
+            st.next()
+            val = _parse_string_body(st, discriminated=True)
+            st.expect(RPAREN)
+            return SxpbLone({key: SxpbNest([val])})
+
+        if after_key.kind == LPAREN:
+            # (key (sub_stuff ...)) — nested nest or subfield
+            body = _parse_nest_body(st)
+            st.expect(RPAREN)
+            if len(body) == 1 and isinstance(body[0], str):
+                return SxpbLone({key: SxpbNest([body[0]])})
+            return SxpbLone({key: body})
+
+        # (key ...) — parse the rest as a nest_body (items until RPAREN)
+        body = _parse_nest_body(st)
+        st.expect(RPAREN)
         return SxpbLone({key: body})
 
-    def anonymous_discriminated_nest(self, items):
-        # items: [NEST_DISCRIM, nest_body]
-        # Wrap the list returned by nest_body in SxpbNest
-        # Return as SxpbLone with empty key to match JSON representation and handle serialization
-        return SxpbLone({"": SxpbNest(items[-1])})
+    if t.kind == STRING_DISCRIM:
+        # Anonymous discriminated string at nest top level
+        return _parse_discriminated_string(st)
 
-    def discriminated_string_field(self, items):
-        # items: [field_name, discriminated_string]
-        # discriminated_string already returns string
-        key = items[0]
-        content = items[1]
-        return SxpbLone({key: SxpbNest([content])})
+    if t.kind == NEST_DISCRIM:
+        # Anonymous nest: ("") nest_body
+        st.next()
+        return _parse_nest_body(st)
+
+    return None
 
 
-sxpb_parser = Lark(GRAMMAR, start="start", import_paths=[LARK_GRAMMAR_PATH])
+# ── public API ───────────────────────────────────────────────────────────────
 
 
 def loads(text: str, precise: bool = False) -> Json:
-    tree = sxpb_parser.parse(text)
-    data = SexpTransformer().transform(tree)
+    """Parse an SxPB string into Python objects.
+
+    Handles multi-expression files (blank-line-separated toplevel expressions).
+    The first expression is conventionally ``(())`` (a header line).
+    Returns a dict if precise=False (converting to plain types),
+    or the raw SxPB types if precise=True.
+    """
+    tokens = list(_tokenize(text))
+    st = _ParserState(tokens)
+
+    # Parse toplevel expressions (multi-expr files: first is usually (()) header)
+    exprs: list[Any] = []
+    while not st.at_end():
+        expr = _parse_start(st)
+        if expr is not None:
+            exprs.append(expr)
+
+    if not exprs:
+        data: Any = SxpbMesg()
+        return cast(Json, data if precise else to_plain_types(data))
+
+    if len(exprs) == 1:
+        data = exprs[0]
+    else:
+        data = exprs[0]
+        for e in exprs:
+            if isinstance(e, (SxpbDict, SxpbMesg)) and len(e) == 0:
+                continue
+            if isinstance(e, SxpbList) and len(e) == 0:
+                continue
+            data = e
+            break
+
     if not precise:
         return to_plain_types(data)
     return data
 
 
 def load(path: str, precise: bool = False) -> Json:
+    """Parse an SxPB file."""
     with open(path, "r", encoding="utf-8") as f:
         return loads(f.read(), precise=precise)
