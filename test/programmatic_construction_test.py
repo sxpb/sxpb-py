@@ -1,6 +1,6 @@
 import textwrap
 
-from sxpb.serializer import dumps
+from sxpb.serialize import dumps
 from sxpb.types import SxpbMesg, SxpbList
 
 

@@ -4,7 +4,7 @@ import sys
 from contextlib import ExitStack
 
 from .jsonutil import to_plain_types
-from .parser import loads
+from .parse import loads
 
 
 def main():

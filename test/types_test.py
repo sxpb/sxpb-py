@@ -1,4 +1,4 @@
-from sxpb.parser import loads
+from sxpb.parse import loads
 from sxpb.types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg
 
 

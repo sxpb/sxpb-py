@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from sxpb import SxpbParseError, parser, serializer
+from sxpb import SxpbParseError, parse, serialize
 from sxpb.types import SxpbNest, SxpbMesg
 import pytest
 import textwrap
@@ -15,7 +15,7 @@ def test_user_example():
          ("y z" "" e f)
         )
     """)
-    data = parser.loads(sxpb_text, precise=True)
+    data = parse.loads(sxpb_text, precise=True)
     assert isinstance(data, (dict, SxpbMesg))
     nest = data["my_nest"]
     assert isinstance(nest, Sequence)
@@ -46,7 +46,7 @@ def test_user_example():
     assert len(yz) == 1
 
     # Serialization test
-    generated_sxpb = serializer.dumps(data, indent=1)
+    generated_sxpb = serialize.dumps(data, indent=1)
 
     # Check output format
     print(generated_sxpb)
@@ -74,7 +74,7 @@ def test_nest_roundtrip():
     # Wrap in a message structure as Nests are usually fields
     data = {"my_nest": nest}
 
-    serialized = serializer.dumps(data, indent=1)
+    serialized = serialize.dumps(data, indent=1)
 
     assert '(my_nest ("")' in serialized
     assert "simple" in serialized
@@ -87,7 +87,7 @@ def test_nest_roundtrip():
     assert '(empty_str "")' in serialized
 
     # Parse back
-    loaded = parser.loads(serialized, precise=True)
+    loaded = parse.loads(serialized, precise=True)
     assert isinstance(loaded, (dict, SxpbMesg))
     assert loaded["my_nest"] == nest
 
@@ -96,19 +96,19 @@ def test_formatting_rules():
     # 4 strings -> multiline
     nest = SxpbNest(["a", "b", "c", "d"])
     data = {"test": nest}
-    serialized = serializer.dumps(data, indent=1)
+    serialized = serialize.dumps(data, indent=1)
     assert '(test ("")\n a\n b\n c\n d\n)' in serialized
 
     # 3 strings -> inline
     nest3 = SxpbNest(["a", "b", "c"])
     data3 = {"test": nest3}
-    serialized3 = serializer.dumps(data3, indent=1)
+    serialized3 = serialize.dumps(data3, indent=1)
     assert '(test ("") a b c)' in serialized3
 
     # subnest -> multiline
     nest_mixed = SxpbNest(["a", {"sub": SxpbNest(["x"])}])
     data_mixed = {"test": nest_mixed}
-    serialized_mixed = serializer.dumps(data_mixed, indent=1)
+    serialized_mixed = serialize.dumps(data_mixed, indent=1)
     assert '(test ("")\n a\n (sub x)\n)' in serialized_mixed
 
 
@@ -117,11 +117,11 @@ def test_illegal_subnest_in_string_field():
     sxpb_text = '(my_nest ("") (my_string "" (illegal)))'
 
     with pytest.raises(SxpbParseError):
-        parser.loads(sxpb_text, precise=True)
+        parse.loads(sxpb_text, precise=True)
 
     # Also test legal atoms
     legal_text = '(my_nest ("") (my_string "" legal atoms))'
-    data = parser.loads(legal_text, precise=True)
+    data = parse.loads(legal_text, precise=True)
     assert isinstance(data, (dict, SxpbMesg))
     assert "my_nest" in data
     nest = data["my_nest"]
@@ -138,7 +138,7 @@ def test_toplevel_nest():
         key1
         (key2 val2)
     """)
-    data = parser.loads(sxpb_text, precise=True)
+    data = parse.loads(sxpb_text, precise=True)
     assert isinstance(data, SxpbNest)
     assert "key1" in data
 
@@ -150,11 +150,11 @@ def test_toplevel_nest():
     assert "val2" in key2
 
     # Roundtrip
-    serialized = serializer.dumps(data, indent=1)
+    serialized = serialize.dumps(data, indent=1)
     print(serialized)
     assert serialized.strip().startswith('("")')
     assert "key1" in serialized
     assert "(key2 val2)" in serialized
 
-    loaded = parser.loads(serialized, precise=True)
+    loaded = parse.loads(serialized, precise=True)
     assert loaded == data

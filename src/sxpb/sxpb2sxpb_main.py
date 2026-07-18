@@ -3,8 +3,8 @@ import sys
 from contextlib import ExitStack
 
 from .exceptions import SxpbParseError
-from .parser import loads
-from .serializer import dumps
+from .parse import loads
+from .serialize import dumps
 
 
 def main():

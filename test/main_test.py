@@ -41,7 +41,7 @@ def test_json2sxpb(sxpb_content, json_content):
     )
     # Just checking for basic equivalence, not perfect formatting.
     # We'll reload the sxpb output and compare to the parsed original sxpb.
-    from sxpb.parser import loads
+    from sxpb.parse import loads
     from sxpb.jsonutil import to_plain_types
 
     original_parsed = to_plain_types(loads(sxpb_content))

@@ -1,5 +1,5 @@
-from sxpb.parser import loads
-from sxpb.serializer import dumps
+from sxpb.parse import loads
+from sxpb.serialize import dumps
 from sxpb.types import SxpbDict, SxpbMesg
 import textwrap
 

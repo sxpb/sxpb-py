@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from reference_parser import lark_parser
-from sxpb import SxpbParseError, parser as hand_parser
+from sxpb import SxpbParseError, parse as hand_parse
 
 CONTENT_DIR = Path(__file__).parent / "content"
 
@@ -71,13 +71,15 @@ def _type_snapshot(value):
 @pytest.mark.parametrize("precise", [False, True])
 def test_parsers_agree_on_valid_sources(source, precise):
     grammar_result = lark_parser.loads(source, precise=precise)
-    hand_result = hand_parser.loads(source, precise=precise)
+    hand_result = hand_parse.loads(source, precise=precise)
 
     assert _type_snapshot(hand_result) == _type_snapshot(grammar_result)
 
 
 @pytest.mark.parametrize("source", INVALID_SOURCES)
-@pytest.mark.parametrize("parser", [lark_parser, hand_parser], ids=["lark", "hand"])
-def test_parsers_reject_invalid_sources(source, parser):
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_parsers_reject_invalid_sources(source, parse_module):
     with pytest.raises(SxpbParseError):
-        parser.loads(source, precise=True)
+        parse_module.loads(source, precise=True)

@@ -3,10 +3,10 @@
 Exports: loads, load, dumps, dump, format_sxpb, to_json, from_json
 """
 
-from .parser import loads as loads, load as load
-from .serializer import dumps as dumps, dump as dump
+from .parse import loads as loads, load as load
+from .serialize import dumps as dumps, dump as dump
 from .exceptions import SxpbParseError as SxpbParseError
-from .formatter import SxpbFormatError as SxpbFormatError, format_sxpb as format_sxpb
+from .format import SxpbFormatError as SxpbFormatError, format_sxpb as format_sxpb
 from .jsonutil import to_json, from_json
 from .xml import to_xml
 from .types import (

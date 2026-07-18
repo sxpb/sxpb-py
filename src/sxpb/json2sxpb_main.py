@@ -3,7 +3,7 @@ import json
 import sys
 from contextlib import ExitStack
 
-from .serializer import dumps
+from .serialize import dumps
 
 
 def main():

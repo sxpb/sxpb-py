@@ -12,7 +12,7 @@ from typing import Iterable
 
 from pathspec import GitIgnoreSpec
 
-from .formatter import SxpbFormatError, format_sxpb
+from .format import SxpbFormatError, format_sxpb
 
 
 IgnoreFilter = tuple[Path, GitIgnoreSpec]
