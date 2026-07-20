@@ -949,8 +949,12 @@ def _parse_nest_body(st: _ParserState) -> SxpbNest:
         if t.kind == END:
             break
         item = _parse_nest_item(st)
-        if item is not None:
-            nest.append(item)
+        if item is None:
+            raise _SxpbSyntaxError(
+                "Nest can only hold nests and strings.",
+                t.line,
+            )
+        nest.append(item)
     return nest
 
 

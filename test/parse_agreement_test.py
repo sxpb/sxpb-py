@@ -40,6 +40,8 @@ INVALID_SOURCES = [
     "(extra right parenthesis))",
     '("" value)',
     '(my_nest ("") (my_string "" (illegal)))',
+    '("") (x (()) y)',
+    '("") (glasses (()) (() (material (()) brass)))',
     '(value "unterminated)',
     '(value """unterminated)',
     r'(value "unknown \q escape")',

@@ -1,6 +1,8 @@
 import json
-import pytest
 import subprocess
+import sys
+
+import pytest
 
 # Test cases: (sxpb_content, json_content)
 TEST_CASES = [
@@ -13,6 +15,37 @@ TEST_CASES = [
         '{"parts": [{"a": 1}, {"b": 2}]}',
     ),
 ]
+
+
+# ── Hang-regression tests ────────────────────────────────────────────
+
+INVALID_NEST_SOURCES = [
+    '("") (x (()) y)',
+    '("") (glasses (()) (() (material (()) brass)))',
+]
+
+
+@pytest.mark.parametrize("sxpb_content", INVALID_NEST_SOURCES)
+def test_invalid_nest_fails_without_hanging(sxpb_content):
+    """Reject lists inside nests without blocking the test suite."""
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "sxpb.sxpb2sxpb_main",
+                "--validate_only",
+            ],
+            input=sxpb_content,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise AssertionError(f"Parser hung on invalid nest: {sxpb_content!r}") from e
+    assert proc.returncode == 1
+    assert "Validation failed:" in proc.stderr
+    assert "Nest can only hold nests and strings." in proc.stderr
 
 
 @pytest.mark.parametrize("sxpb_content, json_content", TEST_CASES)
