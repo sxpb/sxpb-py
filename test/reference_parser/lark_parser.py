@@ -1,8 +1,8 @@
-import re
 import json
+import re
 from collections import UserList
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 import lark
 from lark import Lark, Token, Transformer, v_args
@@ -17,7 +17,7 @@ LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
 NUM_INT = re.compile(r"^[+-]?\d+$")
 NUM_FLOAT = re.compile(r"^[+-]?(?:\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$")
 
-Json = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
+Json = Union[dict[str, Any], list[Any], str, int, float, bool, None]
 
 _TOKEN_TRANSLATIONS = {
     "BARE": "an unquoted word (e.g., key_name)",

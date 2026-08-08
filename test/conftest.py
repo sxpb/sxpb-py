@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
 import pytest
 
 
@@ -24,6 +25,7 @@ def _run_cli_command(module, args, stdin_data=None, cwd=None):
         encoding="utf-8",
         env=env,
         cwd=cwd,
+        check=False,
     )
     return result
 

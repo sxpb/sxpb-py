@@ -1,8 +1,10 @@
-from collections.abc import Mapping, Sequence
-from sxpb import SxpbParseError, parse, serialize
-from sxpb.types import SxpbNest, SxpbMesg
-import pytest
 import textwrap
+from collections.abc import Mapping, Sequence
+
+import pytest
+
+from sxpb import SxpbParseError, parse, serialize
+from sxpb.types import SxpbMesg, SxpbNest
 
 
 def test_user_example():

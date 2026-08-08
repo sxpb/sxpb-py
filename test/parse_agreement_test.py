@@ -2,9 +2,10 @@ from collections import UserDict, UserList
 from pathlib import Path
 
 import pytest
-
 from reference_parser import lark_parser
-from sxpb import SxpbParseError, parse as hand_parse
+
+from sxpb import SxpbParseError
+from sxpb import parse as hand_parse
 
 CONTENT_DIR = Path(__file__).parent / "content"
 

@@ -4,6 +4,7 @@ from collections import UserDict, UserList
 from pathlib import Path
 
 import pytest
+
 import sxpb
 
 CONTENT_DIR = Path(__file__).parent / "content"
@@ -40,10 +41,10 @@ def test_sxpb_roundtrip(name):
 
     try:
         reloaded_data = sxpb.loads(serialized, precise=True)
-    except Exception as e:
+    except Exception:
         print(f"FAILED SERIALIZATION FOR {name}:")
         print(serialized)
-        raise e
+        raise
 
     if reloaded_data != original_data:
         print(f"MISMATCH FOR {name}:")

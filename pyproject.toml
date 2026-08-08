@@ -31,10 +31,10 @@ build-backend = "pdm.backend"
 
 [dependency-groups]
 dev = [
-  "lark>=1.2.2",
+  "lark==1.3.*",
   "pytest",
-  "ruff",
-  "ty",
+  "ruff==0.15.22",
+  "ty==0.0.64",
 ]
 
 [tool.pdm]

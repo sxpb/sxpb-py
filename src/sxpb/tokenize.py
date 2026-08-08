@@ -1,5 +1,5 @@
 import re
-from typing import Iterator, Tuple
+from collections.abc import Iterator
 
 TOKEN_RE = re.compile(
     r'(?P<LPAR>\()|(?P<RPAR>\))|(?P<TDQUOTE>""")|(?P<DQUOTE>")|(?P<SEMICOLON>;[^\n]*)|(?P<WS>[\s]+)|(?P<ATOM>[^()\s";]+)',
@@ -7,7 +7,7 @@ TOKEN_RE = re.compile(
 )
 
 
-def tokenize(text: str) -> Iterator[Tuple[str, str]]:
+def tokenize(text: str) -> Iterator[tuple[str, str]]:
     pos = 0
     L = len(text)
     while pos < L:

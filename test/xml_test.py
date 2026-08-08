@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import sxpb
 
 CONTENT_DIR = Path(__file__).parent / "content"

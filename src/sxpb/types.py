@@ -40,8 +40,7 @@ class SxpbNest(SxpbList):
             # In the parser, named subnests are represented as SxpbLone objects
             # because they are structurally identical to loneofs (single key-value pairs).
             if isinstance(item, SxpbLone):
-                for k, v in item.items():
-                    yield k, v
+                yield from item.items()
             elif isinstance(item, SxpbNest):
                 yield "", item
             else:

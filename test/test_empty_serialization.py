@@ -1,6 +1,7 @@
 import textwrap
+
 import sxpb
-from sxpb.types import SxpbMany, SxpbLone
+from sxpb.types import SxpbLone, SxpbMany
 
 
 def test_empty_serialization():

@@ -1,5 +1,5 @@
-from xml.etree.ElementTree import Element, tostring, indent
 from collections import UserDict, UserList
+from xml.etree.ElementTree import Element, indent, tostring
 
 
 def to_xml(sxpb_data: UserDict) -> str:

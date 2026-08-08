@@ -1,7 +1,8 @@
+import textwrap
+
 from sxpb.parse import loads
 from sxpb.serialize import dumps
 from sxpb.types import SxpbDict, SxpbMesg
-import textwrap
 
 
 def test_dict_type():

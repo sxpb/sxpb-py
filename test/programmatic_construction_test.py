@@ -1,7 +1,7 @@
 import textwrap
 
 from sxpb.serialize import dumps
-from sxpb.types import SxpbMesg, SxpbList
+from sxpb.types import SxpbList, SxpbMesg
 
 
 def test_programmatic_construction():

@@ -12,13 +12,13 @@ from __future__ import annotations
 import json
 import re
 from collections import UserList
-from typing import Any, Dict, List, Union, cast
+from typing import Any, Union, cast
 
 from .exceptions import SxpbParseError
 from .jsonutil import to_plain_types
 from .types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNest
 
-Json = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
+Json = Union[dict[str, Any], list[Any], str, int, float, bool, None]
 
 # ── tokenizer ────────────────────────────────────────────────────────────────
 

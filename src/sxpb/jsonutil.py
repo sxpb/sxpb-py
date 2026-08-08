@@ -1,6 +1,6 @@
 import json
-from typing import Any
 from collections import UserDict, UserList
+from typing import Any
 
 
 def to_json(obj: Any, path: str, **kwargs):

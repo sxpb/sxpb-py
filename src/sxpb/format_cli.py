@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import sys
 import tempfile
-from typing import Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
 from pathspec import GitIgnoreSpec
 
 from .format import SxpbFormatError, format_sxpb
-
 
 IgnoreFilter = tuple[Path, GitIgnoreSpec]
 

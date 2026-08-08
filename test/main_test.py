@@ -40,6 +40,7 @@ def test_invalid_nest_fails_without_hanging(sxpb_content):
             capture_output=True,
             text=True,
             timeout=3,
+            check=False,
         )
     except subprocess.TimeoutExpired as e:
         raise AssertionError(f"Parser hung on invalid nest: {sxpb_content!r}") from e
@@ -74,8 +75,8 @@ def test_json2sxpb(sxpb_content, json_content):
     )
     # Just checking for basic equivalence, not perfect formatting.
     # We'll reload the sxpb output and compare to the parsed original sxpb.
-    from sxpb.parse import loads
     from sxpb.jsonutil import to_plain_types
+    from sxpb.parse import loads
 
     original_parsed = to_plain_types(loads(sxpb_content))
     output_parsed = to_plain_types(loads(process.stdout))

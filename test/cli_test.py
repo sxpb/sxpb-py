@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
-import pytest
 
+import pytest
 
 CONTENT_DIR = Path(__file__).parent / "content"
 CONTENT_FILES = [f.stem for f in CONTENT_DIR.glob("*.sxpb") if "pumpkin" not in f.stem]

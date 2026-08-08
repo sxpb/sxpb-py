@@ -5,7 +5,6 @@ import pytest
 import sxpb
 from sxpb.format import SxpbFormatError, format_sxpb
 
-
 CONTENT_DIR = Path(__file__).parent / "content"
 
 
