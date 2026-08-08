@@ -33,6 +33,12 @@ VALID_SOURCES = [
     "; comment\n(a 1)",
     '(value """first\nsecond""")',
     '("")\n(lens "" 50mm macro)',
+    # Every has_sxpb_bare_prefix() branch: lone/doubled punctuation,
+    # punctuation-prefixed words, and ordinary bare starters.
+    "(dash -) (dot .)",
+    "(- dash) (. dot)",
+    "(double_dash --+) (double_dot ..-)",
+    "(-word dash) (.word dot) (/ slash)",
     *[path.read_text() for path in sorted(CONTENT_DIR.glob("*.sxpb"))],
 ]
 
@@ -48,6 +54,15 @@ INVALID_SOURCES = [
     r'(value "unknown \q escape")',
     "(value +trueish)",
     "(value +almost)",
+    # Non-bare special prefixes and numeric-looking field names.
+    "(value +)",
+    "(value -.)",
+    "(value -+)",
+    "(value .-)",
+    "(value .+)",
+    "(-1 value)",
+    "(.1 value)",
+    "(-1word value)",
 ]
 
 

@@ -118,6 +118,14 @@ def test_loneof_array_option_serialization():
     )
 
 
+def test_lone_punctuation_bare_atom_roundtrip():
+    data = {"dash": "-", "dot": ".", "-": "dash", ".": "dot"}
+    serialized = sxpb.dumps(data, indent=0)
+
+    assert serialized == "(dash -) (dot .) (- dash) (. dot)"
+    assert sxpb.loads(serialized, precise=True) == data
+
+
 def test_canonical_string_atoms():
     data = {
         "strings": ["1", "two words", "bare"],

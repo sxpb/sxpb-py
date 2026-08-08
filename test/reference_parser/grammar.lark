@@ -44,7 +44,8 @@ STRING_DISCRIM: /""(?!")/
 BOOLEAN: /\+true|\+false/
 
 SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?/
-BARE: /(([-.]?[^-+.0123456789 \t\n\v\f\r;"()])|--|\.\.)([^ \t\n\v\f\r;"()]*)/
+# Keep this prefix logic in parity with Fildesh's has_sxpb_bare_prefix().
+BARE: /(--[^ \t\n\v\f\r;"()]*|\.\.[^ \t\n\v\f\r;"()]*|[-.]?[^-+.0123456789 \t\n\v\f\r;"()][^ \t\n\v\f\r;"()]*|-(?![^ \t\n\v\f\r;"()])|\.(?![^ \t\n\v\f\r;"()]))/
 PLAIN: /[^ \t\n\v\f\r;"()]+/
 
 EMPTY_STRING: /""(?!")/

@@ -62,8 +62,10 @@ _RE_NUMBER = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$")
 _RE_LIST_DISCRIM = re.compile(r"\(\s*\(\s*\)\s*\)")
 _RE_NEST_DISCRIM = re.compile(r'\(\s*""\s*\)')
 _RE_DICT_DISCRIM = re.compile(r"\(\s*\)")
+# Keep this prefix logic in parity with Fildesh's has_sxpb_bare_prefix().
 _RE_BARE = re.compile(
-    r"^(([-.]?[^-+.0123456789 \t\n\v\f\r;\"()])|--|\.\.)([^ \t\n\v\f\r;\"()]*)$"
+    r"^(--[^ \t\n\v\f\r;\"()]*|\.\.[^ \t\n\v\f\r;\"()]*|-|\.|"
+    r"[-.]?[^-+.0123456789 \t\n\v\f\r;\"()][^ \t\n\v\f\r;\"()]*)$"
 )
 _RE_PLAIN = re.compile(r"^[^\t\n\v\f\r;\"()]+$")
 
