@@ -9,6 +9,8 @@ CONTENT_DIR = Path(__file__).parent / "content"
 
 
 def test_one_space_indentation_and_grouped_closings():
+    # Grouped closing parens are allowed: a wrapped close only breaks
+    # when content (fields or values) shares its line.
     source = """  (a
       ( b
        (c
@@ -44,6 +46,138 @@ def test_triple_grouped_closing_has_no_indent():
 """
 
     assert format_sxpb(source) == expected
+
+
+def test_grouped_wrapped_closings_are_kept():
+    # Closing parens grouping with other closing parens only are left alone.
+    source = "(a\n (b\n  5\n))\n"
+
+    assert format_sxpb(source) == source
+
+
+def test_grouped_wrapped_closings_move_as_source_suite():
+    source = "(a\n (b\n  5))\n"
+    expected = "(a\n (b\n  5\n))\n"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
+
+
+def test_separately_lined_wrapped_closings_remain_separate():
+    source = "(a\n (b\n  5)\n)\n"
+    expected = "(a\n (b\n  5\n )\n)\n"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
+
+
+def test_wrapped_value_gets_closing_paren_on_own_line():
+    # A wrapped field whose last line is a bare value
+    # still puts the closing paren on its own line.
+    source = "(a\n 5)\n"
+    expected = "(a\n 5\n)\n"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
+
+
+@pytest.mark.parametrize("newline", ["\r\n", "\r", "\n"])
+def test_wrapped_closing_preserves_source_line_ending(newline):
+    source = f"(a{newline} 5){newline}"
+    expected = f"(a{newline} 5{newline}){newline}"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
+
+
+def test_multiline_string_tail_keeps_closing_parens():
+    # Closing parens sitting on the closing line of a multiline string stay
+    # put, and further closing parens may group after them. The closing
+    # delimiter is a natural endpoint.
+    source = '(value """\\\nfirst\nsecond\n""")\n'
+
+    assert format_sxpb(source) == source
+
+    nested = '(a\n (b\n  (c """\\\nhello\nworld\n""")))\n'
+    expected = '(a\n (b\n  (c """\\\nhello\nworld\n""")))\n'
+
+    assert format_sxpb(nested) == expected
+
+    continued = '(a\n (b """\\\nhello\nworld\n""" "tail"))\n'
+
+    assert format_sxpb(continued) == continued
+
+
+def test_wrapped_field_close_moves_to_own_line():
+    # A closing paren may only share a line with a field if the field it
+    # closes was opened on that same line. Here `my_mesg` opened on line 1,
+    # so its close cannot sit on the `(inner_field 5)` line.
+    source = "(my_mesg\n  (inner_field 5))\n"
+    expected = "(my_mesg\n (inner_field 5)\n)\n"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
+
+
+def test_single_line_field_keeps_closing_paren():
+    # Everything opened on the same line, so the close stays put.
+    source = "(my_mesg (inner_field 5))\n"
+
+    assert format_sxpb(source) == source
+
+
+def test_close_followed_by_sibling_field_breaks_twice():
+    # The close of `a` cannot share `(c 2)`'s line either, so the sibling
+    # moves onto its own line.
+    source = "(a\n (b 1)) (c 2)\n"
+    expected = "(a\n (b 1)\n)\n(c 2)\n"
+
+    assert format_sxpb(source) == expected
+
+
+def test_grouped_closings_with_comments_are_kept():
+    # Closing parens grouping with other closing parens and comments are
+    # left alone too -- nothing on the line but closes and a comment.
+    source = """(a
+ (b
+  (c
+   (d stuff)
+ ))
+)
+"""
+    expected = """(a
+ (b
+  (c
+   (d stuff)
+ ))
+)
+"""
+
+    assert format_sxpb(source) == expected
+
+
+def test_multiline_string_close_stays_attached():
+    # The closing paren shares its line with the end of a string, not a
+    # field, so it is allowed to stay.
+    source = '(value """\\\nfirst\nsecond""")\n'
+
+    assert format_sxpb(source) == source
+
+
+def test_close_moves_own_line_when_sharing_with_any_field():
+    # The last line holds a field plus the close of the outer message.
+    source = "(a\n (b 1) (c 2))\n"
+    expected = "(a\n (b 1) (c 2)\n)\n"
+
+    assert format_sxpb(source) == expected
+
+
+def test_wrapped_field_close_after_comment():
+    source = "(a\n (b 1)) ; note\n(c 2)\n"
+    expected = "(a\n (b 1)\n) ; note\n(c 2)\n"
+
+    assert format_sxpb(source) == expected
+    assert format_sxpb(expected) == expected
 
 
 def test_open_parenthesis_has_content_on_same_line_without_space():

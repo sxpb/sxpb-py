@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -260,6 +261,125 @@ def _coalesce_whitespace(tokens: list[_Token]) -> None:
             i += 1
 
 
+def _break_multiline_closings(text: str, tokens: list[_Token]) -> None:
+    """Give a wrapped field's closing paren its own line when content shares it.
+
+    Rule: a closing paren may only share its line
+    with content like fields, values, and strings
+    if the field it closes was opened on that same line.
+    Once a field wraps, its closing paren starts its own line,
+    so ``(a\n 5)`` becomes ``(a\n 5\n)``.
+    Wrapped closes already grouped on one source line move as a suite,
+    so ``(a\n (b\n  5))`` becomes ``(a\n (b\n  5\n))``.
+    Closes that started on separate source lines remain separate.
+    Close-only lines and multiline-string tails remain unchanged.
+
+    Idempotent in one pass: a break is only ever inserted for a field that
+    already wraps across lines, and inserting a break never turns an inline
+    (single-line) field into a wrapped one.
+    """
+    if not tokens:
+        return
+
+    line = 1
+    lines: list[int] = []
+    multiline_tail_lines: set[int] = set()
+    for token in tokens:
+        lines.append(line)
+        line += sum(1 for _ in _NEWLINE_RE.finditer(token.text))
+        if token.kind == "MULTILINE_STRING":
+            multiline_tail_lines.add(line)
+
+    newline_matches = list(_NEWLINE_RE.finditer(text))
+    source_newlines = [match.start() for match in newline_matches]
+    source_lines = [bisect_left(source_newlines, token.offset) + 1 for token in tokens]
+
+    def source_newline_before(offset: int) -> str:
+        newline_index = bisect_left(source_newlines, offset) - 1
+        if newline_index >= 0:
+            return newline_matches[newline_index].group(0)
+        if newline_matches:
+            return newline_matches[0].group(0)
+        return "\n"
+
+    # Lines holding content other than whitespace, comments, or closing
+    # parens. A close grouping with other closes on a content-free line is
+    # fine; a wrapped close sharing its line with content must break. The line
+    # where a multiline string ends is always a natural endpoint, even when a
+    # continuation follows its closing delimiter.
+    content_lines = {
+        lines[i]
+        for i, token in enumerate(tokens)
+        if token.kind not in {"WS", "COMMENT", "RPAR"}
+        and lines[i] not in multiline_tail_lines
+    }
+
+    break_points: set[int] = set()
+    closing_break_points: set[int] = set()
+    stack: list[int] = []
+    for i, token in enumerate(tokens):
+        if token.kind == "LPAR":
+            stack.append(lines[i])
+        elif token.kind == "RPAR":
+            if not stack:
+                continue
+            open_line = stack.pop()
+            if open_line != lines[i] and lines[i] in content_lines:
+                closing_break_points.add(i)
+                # Content starting after this close must move down too,
+                # otherwise it would share the close's new line.
+                j = i + 1
+                while j < len(tokens) and tokens[j].kind in {"WS", "COMMENT"}:
+                    j += 1
+                if (
+                    j < len(tokens)
+                    and tokens[j].kind != "RPAR"
+                    and lines[j] == lines[i]
+                ):
+                    break_points.add(j)
+
+    # Move adjacent wrapped closes as a suite only when they were already a
+    # suite on the same source line. Requiring every close to need a break
+    # keeps an inline child's close attached to its content, while original
+    # offsets prevent earlier passes from grouping separately-lined closes.
+    for i in closing_break_points:
+        suite_start = i
+        j = i - 1
+        while j >= 0:
+            if tokens[j].kind == "WS":
+                j -= 1
+            elif (
+                j in closing_break_points
+                and tokens[j].kind == "RPAR"
+                and source_lines[j] == source_lines[i]
+            ):
+                suite_start = j
+                j -= 1
+            else:
+                break
+        break_points.add(suite_start)
+
+    if not break_points:
+        return
+
+    result: list[_Token] = []
+    for i, token in enumerate(tokens):
+        if i in break_points:
+            newline = source_newline_before(token.offset)
+            preceding = result[-1] if result else None
+            if preceding is not None and preceding.kind == "WS":
+                if not _NEWLINE_RE.search(preceding.text):
+                    result[-1] = _Token(
+                        "WS",
+                        preceding.text.rstrip(_HORIZONTAL_WHITESPACE) + newline,
+                        preceding.offset,
+                    )
+            else:
+                result.append(_Token("WS", newline, token.offset))
+        result.append(token)
+    tokens[:] = result
+
+
 def _leading_close_count(tokens: list[_Token], start: int) -> int:
     count = 0
     i = start
@@ -344,6 +464,7 @@ def format_sxpb(text: str) -> str:
     _canonicalize_multiline_quoted_strings(tokens)
     _join_field_discriminators(tokens)
     _coalesce_whitespace(tokens)
+    _break_multiline_closings(text, tokens)
     _normalize_indentation(tokens)
     _space_same_line_comments(tokens)
     return "".join(token.text for token in tokens)

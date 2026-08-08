@@ -24,10 +24,14 @@ uv tool run pdm install --prod
 
 ## Lint and Tidy
 
-`sxpb-tidy` formats SxPB source while preserving comments, literal spelling, and existing line grouping. `sxpb-lint` reports source that is not tidy without modifying it.
-With no paths, both commands process the current directory recursively. Pass explicit files or directories to narrow the scope, or use `-` for stdin.
+`sxpb-tidy` formats SxPB source while preserving comments and literal spelling.
+Line grouping is mostly preserved, with some opinions on where closing parentheses should be.
+`sxpb-lint` reports source that is not tidy without modifying it.
+With no paths, both commands process the current directory recursively.
+Pass explicit files or directories to narrow the scope, or use `-` for stdin.
 
-Repository traversal has no implicit exclusions. Pass `--ignore-file` to apply gitignore-style patterns from a specific file; patterns are relative to that file's directory and apply to optional explicit paths too.
+Repository traversal has no implicit exclusions.
+Pass `--ignore-file` to apply gitignore-style patterns from a specific file; patterns are relative to that file's directory and apply to optional explicit paths too.
 
 ```shell
 sxpb-tidy --ignore-file .gitignore
