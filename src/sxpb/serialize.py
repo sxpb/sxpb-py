@@ -65,7 +65,7 @@ def dumps(obj: Any, indent: int = 1) -> str:
             return f"(()) {list_body}"
 
         # indent < 0
-        return f"((){list_body})"
+        return f"(()){list_body}"
 
     raise TypeError("Top-level object must be a message or a list/array")
 
@@ -399,8 +399,11 @@ def _serialize_list_body(lst: Sequence, indent: int, level: int) -> str:
     is_message_array = lst and isinstance(lst[0], Mapping)
 
     if is_message_array and indent < 0:
-        bodies = [_serialize_message_body(item, indent, level + 1) for item in lst]
-        return f"((){_join_condensed(bodies)})"
+        items = []
+        for item in lst:
+            body = _serialize_message_body(item, indent, level + 1)
+            items.append(f"((){body})" if body else "()")
+        return _join_condensed(items)
 
     items = []
     for item in lst:

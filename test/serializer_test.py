@@ -59,9 +59,11 @@ def test_top_level_array_serialization():
     # Zero indent
     expected_zero = "(()) 1 2 3"
     assert sxpb.dumps(data, indent=0) == expected_zero
-    # Condensed indent
-    expected_condensed = "(()1 2 3)"
-    assert sxpb.dumps(data, indent=-1) == expected_condensed
+    # Condensed indent: the list discriminator is complete before its elements.
+    expected_condensed = "(())1 2 3"
+    serialized = sxpb.dumps(data, indent=-1)
+    assert serialized == expected_condensed
+    assert sxpb.loads(serialized, precise=True) == data
 
 
 def test_message_array_serialization():
@@ -73,9 +75,32 @@ def test_message_array_serialization():
     # Zero indent
     expected_zero = "(messages (()) (() (a 1)) (() (b 2)))"
     assert sxpb.dumps(data, indent=0) == expected_zero
-    # Condensed indent
-    expected_condensed = "(messages(())(()(a 1)(b 2)))"
-    assert sxpb.dumps(data, indent=-1) == expected_condensed
+    # Condensed indent: each message retains its anonymous-message wrapper.
+    expected_condensed = "(messages(())(()(a 1))(()(b 2)))"
+    serialized = sxpb.dumps(data, indent=-1)
+    assert serialized == expected_condensed
+    precise = sxpb.loads(serialized, precise=True)
+    assert precise == data
+    assert isinstance(precise, sxpb.Mesg)
+    assert isinstance(precise["messages"], sxpb.List)
+
+
+def test_condensed_message_arrays_preserve_empty_elements():
+    messages = [{}, {"a": 1}, {}, {"b": 2}]
+    cases = [
+        (messages, "(())()(()(a 1))()(()(b 2))"),
+        (
+            {"messages": messages},
+            "(messages(())()(()(a 1))()(()(b 2)))",
+        ),
+    ]
+
+    for data, expected in cases:
+        serialized = sxpb.dumps(data, indent=-1)
+        assert serialized == expected
+        precise = sxpb.loads(serialized, precise=True)
+        assert precise == data
+        assert sxpb.loads(sxpb.dumps(precise, indent=-1), precise=True) == precise
 
 
 def test_unicode_serialization():
