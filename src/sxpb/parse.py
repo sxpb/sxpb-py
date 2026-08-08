@@ -399,10 +399,10 @@ def _parse_start(st: _ParserState) -> Any:
 # ── discriminators ───────────────────────────────────────────────────────────
 
 # discriminated_array: LIST_DISCRIM array_body
-# discriminated_manyof: LIST_DISCRIM any_field*
+# discriminated_manyof: LIST_DISCRIM any_field manyof_item*
 #
 # These share a LIST_DISCRIM prefix.  We merge them into one parse function
-# and disambiguate by inspecting the content.
+# and disambiguate from the first element.
 
 
 def _parse_discriminated_list(st: _ParserState, stop_kind: str = END) -> Any:
@@ -549,10 +549,10 @@ def _parse_string_array_item(st: _ParserState, result: SxpbList) -> None:
 def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) -> Any:
     """Disambiguate discriminated_array vs discriminated_manyof by content.
 
-    stop_kind: END for toplevel, RPAREN for nested (closes enclosing field).
+    A named first element selects manyof; later anonymous elements do not
+    change that choice.  stop_kind is END at top level and RPAREN in a field.
     """
     items: list[Any] = []
-    saw_non_field = False
 
     while not st.at_end():
         t = st.peek()
@@ -565,29 +565,23 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
         if item is None:
             break
         items.append(item)
-        if not isinstance(item, (tuple, SxpbLone, SxpbMany)):
-            saw_non_field = True
 
     if not items:
         return SxpbList()
 
-    if saw_non_field:
-        # It's an array of scalars or messages
+    first_is_named = isinstance(items[0], (tuple, SxpbLone, SxpbMany))
+    if not first_is_named:
         return SxpbList(items)
-    else:
-        # It's a manyof — wrap as SxpbMany of SxpbLone
-        many_items = []
-        for item in items:
-            if isinstance(item, tuple):
-                many_items.append(SxpbLone({item[0]: item[1]}))
-            elif isinstance(item, SxpbLone):
-                many_items.append(item)
-            elif isinstance(item, SxpbMany):
-                # A discriminated_manyof inside manyof produces SxpbMany directly
-                many_items.append(item)
-            else:
-                many_items.append(SxpbLone({"value": item}))
-        return SxpbMany(many_items)
+
+    return SxpbMany([_as_manyof_element(item) for item in items])
+
+
+def _as_manyof_element(item: Any) -> Any:
+    if isinstance(item, tuple):
+        return SxpbLone({item[0]: item[1]})
+    if isinstance(item, (SxpbLone, SxpbMany)):
+        return item
+    return SxpbLone({"": item})
 
 
 def _parse_list_item(st: _ParserState) -> Any:
@@ -791,13 +785,7 @@ def _parse_any_field_content(st: _ParserState) -> tuple[str, Any] | None:
             # _parse_manyof_items stops at the field's closing RPAREN (unconsumed).
             if not items:
                 return key, SxpbMany()
-            many_items: list = []
-            for item in items:
-                if isinstance(item, tuple):
-                    many_items.append(SxpbLone({item[0]: item[1]}))
-                else:
-                    many_items.append(SxpbLone({"value": item}))
-            return key, SxpbMany(many_items)
+            return key, SxpbMany([_as_manyof_element(item) for item in items])
         else:
             # loneof: ((key subkey) value)
             subkey = _parse_field_name(st)

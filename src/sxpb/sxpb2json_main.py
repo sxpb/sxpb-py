@@ -42,7 +42,7 @@ def main():
                 else stack.enter_context(open(args.outfile, "w", encoding="utf-8"))
             )
 
-            sxpb_data = loads(infile.read())
+            sxpb_data = loads(infile.read(), precise=True)
             plain_data = to_plain_types(sxpb_data)
 
             json_kwargs = {

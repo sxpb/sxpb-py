@@ -30,6 +30,9 @@ VALID_SOURCES = [
     "((history) ((event words_chosen)))",
     "(table ((phase_as flip) (player p2)) (status PLAYING))",
     "((kind) 1 two +false)",
+    "((choice) (() (a 1)) ())",
+    "(()) (a 1) 2 3",
+    '(()) (a one) "2" "3"',
     "; comment\n(a 1)",
     '(value """first\nsecond""")',
     '("")\n(lens "" 50mm macro)',
@@ -92,6 +95,30 @@ def test_parsers_agree_on_valid_sources(source, precise):
     hand_result = hand_parse.loads(source, precise=precise)
 
     assert _type_snapshot(hand_result) == _type_snapshot(grammar_result)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("((choice) 1 (value 2))", {"choice": [{"": 1}, {"value": 2}]}),
+        ("((choice) (() (a 1)) ())", {"choice": [{"": {"a": 1}}, {"": {}}]}),
+        ("(()) (a 1) 2 3", [{"a": 1}, {"": 2}, {"": 3}]),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_manyof_element_names_are_preserved(parse_module, source, expected):
+    assert parse_module.loads(source, precise=True) == expected
+
+
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_plain_manyof_elements_use_value_name(parse_module):
+    source = "((choice) 1 (value 2))"
+    expected = {"choice": [{"value": 1}, {"value": 2}]}
+    assert parse_module.loads(source) == expected
 
 
 @pytest.mark.parametrize("source", INVALID_SOURCES)

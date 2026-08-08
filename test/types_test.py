@@ -1,3 +1,6 @@
+import json
+
+from sxpb.jsonutil import to_json
 from sxpb.parse import loads
 from sxpb.types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg
 
@@ -27,6 +30,15 @@ def test_to_dict_and_to_list():
     assert not isinstance(plain_data["f"], SxpbMany)
     assert isinstance(plain_data["g"], dict)
     assert not isinstance(plain_data["g"], SxpbDict)
+
+
+def test_to_json_uses_value_for_anonymous_manyof_elements(tmp_path):
+    data = SxpbMesg({"choice": SxpbMany([SxpbLone({"": 1}), SxpbLone({"value": 2})])})
+    path = tmp_path / "data.json"
+
+    to_json(data, str(path))
+
+    assert json.loads(path.read_text()) == {"choice": [{"value": 1}, {"value": 2}]}
 
 
 def test_loads_precise():

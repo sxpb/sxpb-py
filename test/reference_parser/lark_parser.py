@@ -118,6 +118,14 @@ class UnquotedString(str):
     pass
 
 
+def _as_manyof_element(item: Any) -> Any:
+    if isinstance(item, tuple):
+        return SxpbLone({item[0]: item[1]})
+    if isinstance(item, (SxpbLone, SxpbMany)):
+        return item
+    return SxpbLone({"": item})
+
+
 class SexpTransformer(Transformer):
     def BARE(self, s):
         return UnquotedString(s.value)
@@ -217,14 +225,8 @@ class SexpTransformer(Transformer):
         if isinstance(body[0], SxpbMany):  # discriminated_manyof
             return name, body[0]
 
-        # The body is from (atom | any_field)*
-        new_body = []
-        for item in body:
-            if isinstance(item, tuple):
-                new_body.append(SxpbLone({item[0]: item[1]}))
-            else:
-                new_body.append(SxpbLone({"value": item}))
-        return name, SxpbMany(new_body)
+        # The body is from manyof_item*.
+        return name, SxpbMany([_as_manyof_element(item) for item in body])
 
     def loneof_name(self, items):
         return items
@@ -239,10 +241,8 @@ class SexpTransformer(Transformer):
         if items and isinstance(items[0], Token) and items[0].type == "LIST_DISCRIM":
             start_idx = 1
 
-        # Filter out remaining items
         items = items[start_idx:]
-
-        return SxpbMany([SxpbLone({item[0]: item[1]}) for item in items])
+        return SxpbMany([_as_manyof_element(item) for item in items])
 
     def any_field(self, items):
         return items[0]

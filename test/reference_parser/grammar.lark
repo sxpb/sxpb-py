@@ -3,7 +3,7 @@
 message_body: any_field*
 discriminated_array: LIST_DISCRIM array_body
 discriminated_dict: DICT_DISCRIM message_body
-discriminated_manyof: LIST_DISCRIM any_field*
+discriminated_manyof: LIST_DISCRIM any_field manyof_item*
 discriminated_nest: NEST_DISCRIM nest_body
 discriminated_string: STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
@@ -27,7 +27,7 @@ anonymous_discriminated_string: "(" STRING_DISCRIM (ESCAPED_STRING | MULTILINE_S
 
 loneof_name: "(" field_name field_name ")"
 
-manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field
+manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field | empty_message | anonymous_discriminated_message
 
 nest_key: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 nest_body: nest_item*

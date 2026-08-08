@@ -1,3 +1,5 @@
+import pytest
+
 import sxpb
 
 
@@ -48,6 +50,99 @@ def test_top_level_manyof_serialization():
     # Condensed indent
     expected_condensed = "(())(a 1)(b 2)"
     assert sxpb.dumps(data, indent=-1) == expected_condensed
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_by_indent"),
+    [
+        (
+            [1, 2],
+            {
+                1: "((choice)\n 1\n 2\n)",
+                0: "((choice) 1 2)",
+                -1: "((choice)1 2)",
+            },
+        ),
+        (
+            ["1", "2"],
+            {
+                1: '((choice)\n "1"\n "2"\n)',
+                0: '((choice) "1" "2")',
+                -1: '((choice)"1" "2")',
+            },
+        ),
+    ],
+    ids=["numbers", "numeric-looking-strings"],
+)
+def test_named_manyof_anonymous_scalar_roundtrip(values, expected_by_indent):
+    data = {"choice": sxpb.Many([sxpb.Lone({"": value}) for value in values])}
+
+    for indent, expected in expected_by_indent.items():
+        serialized = sxpb.dumps(data, indent=indent)
+        assert serialized == expected
+
+        parsed = sxpb.loads(serialized, precise=True)
+        assert isinstance(parsed, sxpb.Mesg)
+        assert isinstance(parsed["choice"], sxpb.Many)
+        assert parsed == data
+
+
+def test_named_manyof_preserves_explicit_value_name():
+    data = {"choice": sxpb.Many([sxpb.Lone({"value": 1}), sxpb.Lone({"": 2})])}
+    expected_by_indent = {
+        1: "((choice)\n (value 1)\n 2\n)",
+        0: "((choice) (value 1) 2)",
+        -1: "((choice)(value 1)2)",
+    }
+
+    for indent, expected in expected_by_indent.items():
+        serialized = sxpb.dumps(data, indent=indent)
+        assert serialized == expected
+        assert sxpb.loads(serialized, precise=True) == data
+
+
+def test_named_manyof_anonymous_message_roundtrip():
+    data = {
+        "choice": sxpb.Many(
+            [sxpb.Lone({"": sxpb.Mesg({"a": 1})}), sxpb.Lone({"": sxpb.Mesg()})]
+        )
+    }
+    serialized = sxpb.dumps(data, indent=0)
+    assert serialized == "((choice) (() (a 1)) ())"
+    assert sxpb.loads(serialized, precise=True) == data
+
+
+@pytest.mark.parametrize(
+    ("values", "atoms"),
+    [
+        ([1, 2, 3], ["1", "2", "3"]),
+        (["1", "2", "3"], ['"1"', '"2"', '"3"']),
+    ],
+    ids=["numbers", "numeric-looking-strings"],
+)
+@pytest.mark.parametrize(
+    "first_name", ["a", ""], ids=["named-first", "anonymous-first"]
+)
+def test_top_level_manyof_scalar_serialization(values, atoms, first_name):
+    data = sxpb.Many(
+        [sxpb.Lone({first_name: values[0]})]
+        + [sxpb.Lone({"": value}) for value in values[1:]]
+    )
+    printed_first_name = first_name or "value"
+    expected_by_indent = {
+        1: f"(())\n({printed_first_name} {atoms[0]})\n{atoms[1]}\n{atoms[2]}",
+        0: f"(()) ({printed_first_name} {atoms[0]}) {atoms[1]} {atoms[2]}",
+        -1: f"(())({printed_first_name} {atoms[0]}){atoms[1]} {atoms[2]}",
+    }
+    expected_parsed = sxpb.Many(
+        [sxpb.Lone({printed_first_name: values[0]})]
+        + [sxpb.Lone({"": value}) for value in values[1:]]
+    )
+
+    for indent, expected in expected_by_indent.items():
+        serialized = sxpb.dumps(data, indent=indent)
+        assert serialized == expected
+        assert sxpb.loads(serialized, precise=True) == expected_parsed
 
 
 def test_top_level_array_serialization():

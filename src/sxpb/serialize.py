@@ -38,9 +38,10 @@ def dumps(obj: Any, indent: int = 1) -> str:
         # Top-level ManyOf
         if not obj:
             return "(())"
-        parts = []
-        for item in obj:
-            parts.append(_serialize_message_body(item, indent, 0))
+        parts = [
+            _serialize_manyof_item(item, indent, 0, name_anonymous=index == 0)
+            for index, item in enumerate(obj)
+        ]
 
         if indent > 0:
             return "(())\n" + "\n".join(parts)
@@ -296,23 +297,40 @@ def _format_key(key: str) -> str:
     return _format_atom(key, is_key=True)
 
 
+def _serialize_manyof_item(
+    item: Mapping,
+    indent: int,
+    level: int,
+    *,
+    name_anonymous: bool = False,
+) -> str:
+    if isinstance(item, SxpbLone) and len(item) == 1 and "" in item:
+        value = item[""]
+        if name_anonymous:
+            return _serialize_field("value", value, indent, level)
+
+        pad = " " * (indent * level) if indent > 0 else ""
+        if isinstance(value, Mapping):
+            body = _serialize_message_body(value, indent, level + 1)
+            if not body:
+                return f"{pad}()"
+            if indent > 0:
+                return f"{pad}(()\n{body}\n{pad})"
+            if indent == 0:
+                return f"(() {body})"
+            return f"((){body})"
+        return f"{pad}{_format_atom(value, in_array=True)}"
+
+    return _serialize_message_body(item, indent, level)
+
+
 def _serialize_manyof_field(
     key: str, value: SxpbMany, indent: int, level: int, pad: str
 ) -> str:
     if not value:
         return f"{pad}(({key}))"
 
-    parts = []
-    for item in value:
-        if isinstance(item, SxpbLone) and "value" in item and len(item) == 1:
-            val = item["value"]
-            if indent > 0:
-                inner_pad = " " * (indent * (level + 1))
-                parts.append(f"{inner_pad}{_format_atom(val, in_array=True)}")
-            else:
-                parts.append(_format_atom(val, in_array=True))
-        else:
-            parts.append(_serialize_message_body(item, indent, level + 1))
+    parts = [_serialize_manyof_item(item, indent, level + 1) for item in value]
 
     if indent > 0:
         body = "\n".join(parts)
