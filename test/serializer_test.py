@@ -118,6 +118,17 @@ def test_loneof_array_option_serialization():
     )
 
 
+def test_condensed_loneof_message_roundtrip():
+    data = {"fruit_as": sxpb.Lone({"banana": {"count": 5, "ripeness": 0.4}})}
+    serialized = sxpb.dumps(data, indent=-1)
+
+    assert serialized == "((fruit_as banana)(count 5)(ripeness 0.4))"
+    parsed = sxpb.loads(serialized, precise=True)
+    assert isinstance(parsed, sxpb.Mesg)
+    assert isinstance(parsed["fruit_as"], sxpb.Lone)
+    assert parsed == data
+
+
 def test_lone_punctuation_bare_atom_roundtrip():
     data = {"dash": "-", "dot": ".", "-": "dash", ".": "dot"}
     serialized = sxpb.dumps(data, indent=0)

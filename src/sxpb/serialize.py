@@ -338,7 +338,7 @@ def _serialize_loneof_field(
         return f"(({key} {subkey}){body})"
 
     key_part = f"({_join_condensed([key, subkey])})"
-    return f"(({_join_condensed([key_part, body])}))"
+    return f"({_join_condensed([key_part, body])})"
 
 
 def _serialize_field_body(value: Any, indent: int, level: int) -> str:
