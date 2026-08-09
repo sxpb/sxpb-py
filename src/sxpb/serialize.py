@@ -36,10 +36,17 @@ def dumps(obj: Any, indent: int = 1) -> str:
 
     if isinstance(obj, SxpbMany):
         # Top-level ManyOf
+        anonymous_kind = _validate_manyof_elements(obj)
         if not obj:
             return "(())"
         parts = [
-            _serialize_manyof_item(item, indent, 0, name_anonymous=index == 0)
+            _serialize_manyof_item(
+                item,
+                indent,
+                0,
+                name_anonymous=index == 0,
+                anonymous_kind=anonymous_kind,
+            )
             for index, item in enumerate(obj)
         ]
 
@@ -303,9 +310,10 @@ def _serialize_manyof_item(
     level: int,
     *,
     name_anonymous: bool = False,
+    anonymous_kind: str | None = None,
 ) -> str:
     if isinstance(item, SxpbLone) and len(item) == 1 and "" in item:
-        value = item[""]
+        value = _normalize_anonymous_value(item[""], kind=anonymous_kind)
         if name_anonymous:
             return _serialize_field("value", value, indent, level)
 
@@ -327,10 +335,14 @@ def _serialize_manyof_item(
 def _serialize_manyof_field(
     key: str, value: SxpbMany, indent: int, level: int, pad: str
 ) -> str:
+    anonymous_kind = _validate_manyof_elements(value)
     if not value:
         return f"{pad}(({key}))"
 
-    parts = [_serialize_manyof_item(item, indent, level + 1) for item in value]
+    parts = [
+        _serialize_manyof_item(item, indent, level + 1, anonymous_kind=anonymous_kind)
+        for item in value
+    ]
 
     if indent > 0:
         body = "\n".join(parts)
@@ -425,13 +437,15 @@ def _array_element_kind(item: Any) -> str | None:
     return None
 
 
-def _validate_array_elements(lst: Sequence) -> None:
+def _validate_list_elements(lst: Sequence, *, container: str) -> None:
     if not lst:
         return
 
     first_kind = _array_element_kind(lst[0])
     if first_kind is None:
-        raise TypeError(f"Unsupported first array element: {type(lst[0]).__name__}")
+        raise TypeError(
+            f"Unsupported first {container} element: {type(lst[0]).__name__}"
+        )
 
     for index, item in enumerate(lst[1:], 1):
         item_kind = _array_element_kind(item)
@@ -444,12 +458,33 @@ def _validate_array_elements(lst: Sequence) -> None:
             )
         if not compatible:
             raise TypeError(
-                f"Array element {index} is incompatible with a {first_kind}-first array"
+                f"{container.capitalize()} element {index} is incompatible with a "
+                f"{first_kind}-first {container}"
             )
 
 
+def _normalize_anonymous_value(value: Any, *, kind: str | None) -> Any:
+    if kind == "string" and not isinstance(value, str):
+        if isinstance(value, bool):
+            return "+true" if value else "+false"
+        return str(value)
+    if kind == "boolean" and isinstance(value, int):
+        return bool(value)
+    return value
+
+
+def _validate_manyof_elements(manyof: SxpbMany) -> str | None:
+    anonymous = [
+        item[""]
+        for item in manyof
+        if isinstance(item, SxpbLone) and len(item) == 1 and "" in item
+    ]
+    _validate_list_elements(anonymous, container="manyof")
+    return _array_element_kind(anonymous[0]) if anonymous else None
+
+
 def _serialize_list_body(lst: Sequence, indent: int, level: int) -> str:
-    _validate_array_elements(lst)
+    _validate_list_elements(lst, container="array")
     is_message_array = lst and isinstance(lst[0], Mapping)
 
     if is_message_array and indent < 0:

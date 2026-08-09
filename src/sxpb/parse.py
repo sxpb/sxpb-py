@@ -454,7 +454,7 @@ def _parse_discriminated_list(st: _ParserState, stop_kind: str = END) -> Any:
         # Parse with list-item disambiguation.
         return _parse_discriminated_list_content(st, stop_kind)
     else:
-        return SxpbList()
+        raise _SxpbSyntaxError("Unexpected list element.", t.line)
 
 
 class _ScalarListNormalizer:
@@ -501,6 +501,41 @@ class _ScalarListNormalizer:
                 return bool(value)
             raise _SxpbSyntaxError("Expected a bool, not an int.", token.line)
         raise _SxpbSyntaxError("Unexpected literal type.", token.line)
+
+
+class _AnonymousListNormalizer:
+    """Apply array element-kind constraints to anonymous list elements."""
+
+    def __init__(self, *, container: str) -> None:
+        self._container = container
+        self._kind: str | None = None
+        self._scalar = _ScalarListNormalizer()
+
+    @property
+    def string_first(self) -> bool:
+        return self._kind == "scalar" and self._scalar.string_first
+
+    def normalize(
+        self,
+        value: Any,
+        token: _Token,
+        *,
+        spelling: str | None = None,
+    ) -> Any:
+        is_message = isinstance(value, (SxpbMesg, SxpbDict))
+        incoming_kind = "message" if is_message else "scalar"
+        if self._kind is None:
+            self._kind = incoming_kind
+        elif self._kind != incoming_kind:
+            if incoming_kind == "message":
+                raise _SxpbSyntaxError(
+                    f"Unexpected message {self._container} element.", token.line
+                )
+            raise _SxpbSyntaxError("Unexpected literal type.", token.line)
+
+        if is_message:
+            return value
+        return self._scalar.normalize(value, token, spelling=spelling)
 
 
 def _reject_reserved_array_string_starter(token: _Token) -> None:
@@ -574,7 +609,7 @@ def _parse_array_body(
             accept_scalar(t, spelling=spelling)
             st.next()
         else:
-            break
+            raise _SxpbSyntaxError("Unexpected list element.", t.line)
 
     return result
 
@@ -640,6 +675,7 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
     """
     items: list[Any] = []
     scalar_normalizer = _ScalarListNormalizer()
+    manyof_normalizer = _AnonymousListNormalizer(container="manyof")
     is_manyof = False
     array_kind: str | None = None
 
@@ -649,28 +685,30 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
             break
         if t.kind == RPAREN and stop_kind == RPAREN:
             break
-        if t.kind == PLAIN and not (
-            not is_manyof and array_kind == "scalar" and scalar_normalizer.string_first
-        ):
+        allow_plain = (
+            manyof_normalizer.string_first
+            if is_manyof
+            else array_kind == "scalar" and scalar_normalizer.string_first
+        )
+        if t.kind == PLAIN and not allow_plain:
             _reject_reserved_array_string_starter(t)
 
         item = _parse_list_item(
             st,
-            allow_plain=(
-                not is_manyof
-                and array_kind == "scalar"
-                and scalar_normalizer.string_first
-            ),
+            allow_plain=allow_plain,
             empty_string_item=bool(items) and not is_manyof,
         )
         if item is None:
-            break
+            raise _SxpbSyntaxError("Unexpected list element.", t.line)
 
         is_named = isinstance(item, (tuple, SxpbLone, SxpbMany))
         is_anon_message = isinstance(item, (SxpbMesg, SxpbDict))
         if not items:
             is_manyof = is_named
         if is_manyof:
+            if not is_named:
+                spelling = t.value if t.kind in (NUMBER, BOOLEAN) else None
+                item = manyof_normalizer.normalize(item, t, spelling=spelling)
             items.append(item)
             continue
         if is_named:
@@ -1025,21 +1063,23 @@ def _parse_field_value(st: _ParserState) -> Any:
 
 
 def _parse_manyof_items(st: _ParserState) -> list[Any]:
-    """manyof_item* after the (key) header in manyof short form."""
+    """Parse a manyof body, ignoring named items during kind reconciliation."""
     items: list[Any] = []
+    normalizer = _AnonymousListNormalizer(container="manyof")
     while not st.at_end():
         t = st.peek()
-        if t.kind == RPAREN:
+        if t.kind in (RPAREN, END):
             break
-        if t.kind == END:
-            break
+        if t.kind == PLAIN and not normalizer.string_first:
+            _reject_reserved_array_string_starter(t)
 
-        item = _parse_list_item(st)
-        if item is not None:
-            items.append(item)
-        else:
-            # Couldn't parse — stop
-            break
+        item = _parse_list_item(st, allow_plain=normalizer.string_first)
+        if item is None:
+            raise _SxpbSyntaxError("Unexpected manyof element.", t.line)
+        if not isinstance(item, (tuple, SxpbLone, SxpbMany)):
+            spelling = t.value if t.kind in (NUMBER, BOOLEAN) else None
+            item = normalizer.normalize(item, t, spelling=spelling)
+        items.append(item)
     return items
 
 

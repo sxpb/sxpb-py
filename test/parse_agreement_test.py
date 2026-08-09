@@ -38,7 +38,6 @@ VALID_SOURCES = [
     "((event words_chosen))",
     "((history) ((event words_chosen)))",
     "(table ((phase_as flip) (player p2)) (status PLAYING))",
-    "((kind) 1 two +false)",
     "((choice) (() (a 1)) ())",
     "(()) (a 1) 2 3",
     '(()) (a one) "2" "3"',
@@ -66,6 +65,7 @@ INVALID_SOURCES = [
     r'(value "unknown \q escape")',
     "(value +trueish)",
     "(value +almost)",
+    "((kind) 1 two +false)",
     # Non-bare special prefixes and numeric-looking field names.
     "(value +)",
     "(value -.)",
@@ -270,6 +270,10 @@ def test_string_first_array_allows_reserved_prefix_continuations(parse_module):
         "(a (()) () 1)",
         "(a (()) 1 (() (x 2)))",
         "(a (()) (() (x 2)) 1)",
+        "(a (()) (()))",
+        "(()) (())",
+        "(()) (()) (a 1)",
+        "(()) 1 (())",
         '(a (()) ("" word) ())',
         '(a (()) (() (x 2)) ("" word))',
         "(a (()) 1 (x 2))",
@@ -296,6 +300,94 @@ def test_arrays_reject_incompatible_element_kinds(parse_module, source):
 )
 def test_manyof_element_names_are_preserved(parse_module, source, expected):
     assert parse_module.loads(source, precise=True) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "((choice) (named 9) one (middle +false) 02 +true)",
+            {
+                "choice": [
+                    {"named": 9},
+                    {"": "one"},
+                    {"middle": False},
+                    {"": "02"},
+                    {"": "+true"},
+                ]
+            },
+        ),
+        (
+            "((choice) (named one) 1 (middle +true) 2.5)",
+            {
+                "choice": [
+                    {"named": "one"},
+                    {"": 1},
+                    {"middle": True},
+                    {"": 2.5},
+                ]
+            },
+        ),
+        (
+            "(()) (named one) +true (middle 9) 00 +01 +false",
+            [
+                {"named": "one"},
+                {"": True},
+                {"middle": 9},
+                {"": False},
+                {"": True},
+                {"": False},
+            ],
+        ),
+        (
+            "((choice) () (named 1) (() (x 2)))",
+            {
+                "choice": [
+                    {"": {}},
+                    {"named": 1},
+                    {"": {"x": 2}},
+                ]
+            },
+        ),
+        (
+            "((choice) 1 (named (x 2)) 3)",
+            {
+                "choice": [
+                    {"": 1},
+                    {"named": {"x": 2}},
+                    {"": 3},
+                ]
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_first_anonymous_controls_manyof_elements(parse_module, source, expected):
+    assert parse_module.loads(source, precise=True) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "((choice) 1 (named word) +true)",
+        "((choice) +true (named word) 2)",
+        "((choice) one (named 1) ())",
+        "((choice) () (named 1) one)",
+        "((choice) 1 (named word) (() (x 2)))",
+        "((choice) (() (x 1)) (named word) 2)",
+        "((choice) (()))",
+        "(()) (named word) one (middle +true) (())",
+        "(()) (named word) 1 (middle +true) +false",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_manyofs_reject_incompatible_anonymous_kinds(parse_module, source):
+    with pytest.raises(SxpbParseError):
+        parse_module.loads(source)
 
 
 @pytest.mark.parametrize(

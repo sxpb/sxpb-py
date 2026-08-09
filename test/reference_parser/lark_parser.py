@@ -161,6 +161,24 @@ def _as_manyof_element(item: Any) -> Any:
     return SxpbLone({"": item})
 
 
+def _normalize_manyof_body(items, *, kind=None):
+    """Normalize only anonymous elements; named elements are transparent."""
+    if kind is None or kind == "message":
+        normalized_anonymous = iter(
+            item for item in items if not isinstance(item, tuple)
+        )
+    else:
+        anonymous = [item for item in items if not isinstance(item, tuple)]
+        normalized_anonymous = iter(_normalize_scalar_list(anonymous, kind=kind))
+
+    normalized = []
+    for item in items:
+        if not isinstance(item, tuple):
+            item = next(normalized_anonymous)
+        normalized.append(_as_manyof_element(item))
+    return SxpbMany(normalized)
+
+
 class SexpTransformer(Transformer):
     def BARE(self, s):
         return UnquotedString(s.value)
@@ -191,14 +209,6 @@ class SexpTransformer(Transformer):
 
     def MULTILINE_STRING(self, s):
         return _decode_quoted_content(s.value[3:-3])
-
-    @v_args(inline=True)
-    def manyof_item(self, a):
-        if isinstance(a, ScalarAtom):
-            return a.value
-        if isinstance(a, UnquotedString):
-            return str(a)
-        return a
 
     @v_args(inline=True)
     def field_name(self, a):
@@ -244,6 +254,9 @@ class SexpTransformer(Transformer):
                 message[key] = val
         return message
 
+    def nonempty_message_body(self, fields):
+        return self.message_body(fields)
+
     @v_args(inline=True)
     def start(self, body):
         return body
@@ -258,21 +271,8 @@ class SexpTransformer(Transformer):
         return key, SxpbLone({subkey: value})
 
     def manyof_field(self, items):
-        name = items[0]
-        if len(items) == 1:
-            return name, SxpbMany()
-
-        body = items[1:]
-        if not body:
-            return name, SxpbMany()
-
-        # `body` can be a list from discriminated_manyof (result is SxpbMany),
-        # or a Token from atom+, or a tuple from any_field*
-        if isinstance(body[0], SxpbMany):  # discriminated_manyof
-            return name, body[0]
-
-        # The body is from manyof_item*.
-        return name, SxpbMany([_as_manyof_element(item) for item in body])
+        name, body = items
+        return name, body
 
     def loneof_name(self, items):
         return items
@@ -282,13 +282,47 @@ class SexpTransformer(Transformer):
         return SxpbDict(items[1])
 
     def discriminated_manyof(self, items):
-        # items[0] might be LIST_DISCRIM if it's passed through
+        # The required first named element establishes the manyof but does not
+        # participate in anonymous element-kind reconciliation.
         start_idx = 0
         if items and isinstance(items[0], Token) and items[0].type == "LIST_DISCRIM":
             start_idx = 1
+        first_item = _as_manyof_element(items[start_idx])
+        body = items[start_idx + 1]
+        return SxpbMany([first_item, *body])
 
-        items = items[start_idx:]
-        return SxpbMany([_as_manyof_element(item) for item in items])
+    def manyof_body(self, items):
+        return items[0]
+
+    def named_manyof_body(self, items):
+        return _normalize_manyof_body(items)
+
+    def message_manyof_item(self, items):
+        return items[0]
+
+    def message_manyof_tail(self, items):
+        return items[0]
+
+    def string_manyof_tail(self, items):
+        return items[0]
+
+    def number_manyof_tail(self, items):
+        return items[0]
+
+    def boolean_manyof_tail(self, items):
+        return items[0]
+
+    def message_manyof_body(self, items):
+        return _normalize_manyof_body(items, kind="message")
+
+    def string_manyof_body(self, items):
+        return _normalize_manyof_body(items, kind="string")
+
+    def number_manyof_body(self, items):
+        return _normalize_manyof_body(items, kind="number")
+
+    def boolean_manyof_body(self, items):
+        return _normalize_manyof_body(items, kind="bool")
 
     def any_field(self, items):
         return items[0]

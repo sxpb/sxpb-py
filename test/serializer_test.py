@@ -131,6 +131,57 @@ def test_named_manyof_anonymous_message_roundtrip():
     assert sxpb.loads(serialized, precise=True) == data
 
 
+def test_manyof_serialization_reconciles_anonymous_element_kinds():
+    data = {
+        "choice": sxpb.Many(
+            [
+                sxpb.Lone({"named": sxpb.Mesg({"x": 1})}),
+                sxpb.Lone({"": "one"}),
+                sxpb.Lone({"middle": True}),
+                sxpb.Lone({"": 2}),
+            ]
+        )
+    }
+    assert sxpb.loads(sxpb.dumps(data), precise=True) == {
+        "choice": [
+            {"named": {"x": 1}},
+            {"": "one"},
+            {"middle": True},
+            {"": "2"},
+        ]
+    }
+
+    top_level = sxpb.Many(
+        [sxpb.Lone({"": "one"}), sxpb.Lone({"": 2}), sxpb.Lone({"": True})]
+    )
+    assert sxpb.dumps(top_level, indent=0) == '(()) (value one) "2" "+true"'
+    assert sxpb.loads(sxpb.dumps(top_level), precise=True) == [
+        {"value": "one"},
+        {"": "2"},
+        {"": "+true"},
+    ]
+
+    bool_first = sxpb.Many(
+        [sxpb.Lone({"": True}), sxpb.Lone({"": 0}), sxpb.Lone({"": 1})]
+    )
+    assert sxpb.dumps(bool_first, indent=0) == "(()) (value +true) +false +true"
+
+    incompatible_anonymous = [
+        [1, "one"],
+        [1, True],
+        [True, 2],
+        [True, 0.0],
+        [1, sxpb.Mesg()],
+        [sxpb.Mesg(), 1],
+    ]
+    for values in incompatible_anonymous:
+        manyof = sxpb.Many([sxpb.Lone({"": value}) for value in values])
+        with pytest.raises(TypeError, match="incompatible"):
+            sxpb.dumps({"choice": manyof})
+        with pytest.raises(TypeError, match="incompatible"):
+            sxpb.dumps(manyof)
+
+
 @pytest.mark.parametrize(
     ("values", "atoms"),
     [

@@ -1,16 +1,17 @@
 ?start: message_body | discriminated_array | discriminated_dict | discriminated_manyof | discriminated_nest
 
 message_body: any_field*
+nonempty_message_body: any_field+
 discriminated_array: LIST_DISCRIM array_body
 discriminated_dict: DICT_DISCRIM message_body
-discriminated_manyof: LIST_DISCRIM any_field manyof_item*
+discriminated_manyof: LIST_DISCRIM any_field manyof_body
 discriminated_nest: NEST_DISCRIM nest_body
 discriminated_string: STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
 any_field: regular_field | loneof_field | manyof_field
 regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
-manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_item* ) ")"
+manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_body ) ")"
 
 field_name: BARE | NONEMPTY_ESCAPED_STRING
 scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
@@ -19,7 +20,7 @@ string_body: (ESCAPED_STRING | MULTILINE_STRING | BARE) (ESCAPED_STRING | MULTIL
 array_body: message_array_body | string_array_body | number_array_body | boolean_array_body
 message_array_body: (empty_message | anonymous_discriminated_message)*
 empty_message: DICT_DISCRIM
-anonymous_discriminated_message: "(" DICT_DISCRIM message_body ")"
+anonymous_discriminated_message: "(" DICT_DISCRIM nonempty_message_body ")"
 string_array_body: string_array_starter string_array_item*
 string_array_starter: ESCAPED_STRING | MULTILINE_STRING | BARE | anonymous_discriminated_string
 string_array_item: ESCAPED_STRING | MULTILINE_STRING | PLAIN | anonymous_discriminated_string
@@ -29,7 +30,21 @@ anonymous_discriminated_string: "(" STRING_DISCRIM (ESCAPED_STRING | MULTILINE_S
 
 loneof_name: "(" field_name field_name ")"
 
-manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field | empty_message | anonymous_discriminated_message
+manyof_body: named_manyof_body
+           | message_manyof_body
+           | string_manyof_body
+           | number_manyof_body
+           | boolean_manyof_body
+named_manyof_body: any_field*
+message_manyof_body: any_field* message_manyof_item message_manyof_tail*
+message_manyof_tail: any_field | message_manyof_item
+message_manyof_item: empty_message | anonymous_discriminated_message
+string_manyof_body: any_field* string_array_starter string_manyof_tail*
+string_manyof_tail: any_field | string_array_item
+number_manyof_body: any_field* SIGNED_NUMBER number_manyof_tail*
+number_manyof_tail: any_field | SIGNED_NUMBER
+boolean_manyof_body: any_field* BOOLEAN boolean_manyof_tail*
+boolean_manyof_tail: any_field | BOOLEAN | SIGNED_NUMBER
 
 nest_body: nest_item*
 nest_item: nest_leaf | nest_subfield | discriminated_string_nest_subfield | anonymous_discriminated_string | anonymous_discriminated_nest
