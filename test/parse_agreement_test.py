@@ -12,6 +12,10 @@ CONTENT_DIR = Path(__file__).parent / "content"
 VALID_SOURCES = [
     "",
     "(a 1) (b +true)",
+    "(a 1e6)",
+    "(a 1e+6)",
+    "(a +1e6)",
+    "(a 1E3)",
     "() (a 1)",
     "( ) (a 1)",
     "(( )) 1 2",

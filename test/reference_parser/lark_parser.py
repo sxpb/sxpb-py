@@ -15,7 +15,7 @@ from sxpb.types import SxpbDict, SxpbList, SxpbLone, SxpbMany, SxpbMesg, SxpbNes
 GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
 LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
 NUM_INT = re.compile(r"^[+-]?\d+$")
-NUM_FLOAT = re.compile(r"^[+-]?(?:\d*\.\d+|\d+\.\d*)(?:[eE][+-]?\d+)?$")
+NUM_FLOAT = re.compile(r"^[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?$")
 
 Json = Union[dict[str, Any], list[Any], str, int, float, bool, None]
 
