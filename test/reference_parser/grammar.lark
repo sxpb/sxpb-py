@@ -11,8 +11,6 @@ any_field: regular_field | loneof_field | manyof_field
 regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_item* ) ")"
-nest_subfield: "(" field_name NEST_DISCRIM? nest_body ")"
-discriminated_string_field: "(" field_name discriminated_string ")"
 
 field_name: BARE | NONEMPTY_ESCAPED_STRING
 scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
@@ -29,9 +27,12 @@ loneof_name: "(" field_name field_name ")"
 
 manyof_item: SIGNED_NUMBER | ESCAPED_STRING | MULTILINE_STRING | BARE | BOOLEAN | any_field | empty_message | anonymous_discriminated_message
 
-nest_key: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 nest_body: nest_item*
-nest_item: nest_key | nest_subfield | discriminated_string_field | anonymous_discriminated_string | anonymous_discriminated_nest
+nest_item: nest_leaf | nest_subfield | discriminated_string_nest_subfield | anonymous_discriminated_string | anonymous_discriminated_nest
+nest_leaf: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
+nest_subfield: "(" subnest_name NEST_DISCRIM? nest_body ")"
+discriminated_string_nest_subfield: "(" subnest_name discriminated_string ")"
+subnest_name: SUBNEST_PLAIN_NAME | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
 
 # Type discriminators: (), (()), (""), ""
@@ -47,6 +48,8 @@ SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?/
 # Keep this prefix logic in parity with Fildesh's has_sxpb_bare_prefix().
 BARE: /(--[^ \t\n\v\f\r;"()]*|\.\.[^ \t\n\v\f\r;"()]*|[-.]?[^-+.0123456789 \t\n\v\f\r;"()][^ \t\n\v\f\r;"()]*|-(?![^ \t\n\v\f\r;"()])|\.(?![^ \t\n\v\f\r;"()]))/
 PLAIN: /[^ \t\n\v\f\r;"()]+/
+# Keep this prefix logic the complement of Fildesh's has_sxpb_special_prefix().
+SUBNEST_PLAIN_NAME: /(?!\+|-[+.]|\.[+-])[^ \t\n\v\f\r;"()]+/
 
 EMPTY_STRING: /""(?!")/
 NONEMPTY_ESCAPED_STRING: /"(\\(.|\n)|[^"\\])+"/

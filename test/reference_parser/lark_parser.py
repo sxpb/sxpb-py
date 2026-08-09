@@ -133,6 +133,9 @@ class SexpTransformer(Transformer):
     def PLAIN(self, s):
         return UnquotedString(s.value)
 
+    def SUBNEST_PLAIN_NAME(self, s):
+        return str(s)
+
     @v_args(inline=True)
     def BOOLEAN(self, b):
         return b.value == "+true"
@@ -165,6 +168,10 @@ class SexpTransformer(Transformer):
         if isinstance(a, UnquotedString):
             return str(a)
         return a
+
+    @v_args(inline=True)
+    def subnest_name(self, name):
+        return name
 
     def string_body(self, atoms):
         string_parts = []
@@ -304,19 +311,16 @@ class SexpTransformer(Transformer):
         return SxpbNest(items)
 
     def nest_item(self, items):
-        # items[0] is the result of nest_key | nest_subfield | discriminated_string_field
         return items[0]
 
     @v_args(inline=True)
-    def nest_key(self, k: str) -> str:
-        # k can be UnquotedString (BARE) or str (quoted/multiline strings)
-        if isinstance(k, UnquotedString):
-            k = str(k)
-        # anonymous_discriminated_string logic returns joined string, passed as is
-        return k
+    def nest_leaf(self, leaf: str) -> str:
+        if isinstance(leaf, UnquotedString):
+            return str(leaf)
+        return leaf
 
     def nest_subfield(self, items):
-        # items: [field_name, nest_body]
+        # items: [subnest_name, nest_body]
         key = items[0]
         body = items[-1]
         return SxpbLone({key: body})
@@ -327,8 +331,8 @@ class SexpTransformer(Transformer):
         # Return as SxpbLone with empty key to match JSON representation and handle serialization
         return SxpbLone({"": SxpbNest(items[-1])})
 
-    def discriminated_string_field(self, items):
-        # items: [field_name, discriminated_string]
+    def discriminated_string_nest_subfield(self, items):
+        # items: [subnest_name, discriminated_string]
         # discriminated_string already returns string
         key = items[0]
         content = items[1]

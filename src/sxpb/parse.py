@@ -52,8 +52,8 @@ BARE = "BARE"  # unquoted word (starts with non-digit/special)
 PLAIN = "PLAIN"  # any non-whitespace, non-paren chars
 QUOTED_STRING = "QUOTED_STRING"  # "..." (JSON-escaped)
 MULTILINE_STRING = "MULTILINE_STRING"  # """..."""
-NUMBER = "SIGNED_NUMBER"  # [+-]? digits (. digits)? ([eE][+-]? digits)?
-BOOLEAN = "BOOLEAN"  # +true | +false
+NUMBER = "SIGNED_NUMBER"  # Raw numeric spelling; converted only in scalar contexts.
+BOOLEAN = "BOOLEAN"  # Raw +true or +false spelling; converted only as a scalar.
 END = "END"  # end of input
 
 
@@ -68,6 +68,29 @@ _RE_BARE = re.compile(
     r"[-.]?[^-+.0123456789 \t\n\v\f\r;\"()][^ \t\n\v\f\r;\"()]*)$"
 )
 _RE_PLAIN = re.compile(r"^[^\t\n\v\f\r;\"()]+$")
+
+
+def _has_sxpb_special_prefix(s: str) -> bool:
+    """Match Fildesh's has_sxpb_special_prefix() exactly."""
+    if not s:
+        return False
+    if s[0] == "+":
+        return True
+    if s[0] in "-.":
+        if len(s) == 1 or s[0] == s[1]:
+            return False
+        return s[1] in "+-."
+    return False
+
+
+def _number_from_spelling(spelling: str) -> int | float:
+    if re.fullmatch(r"[+-]?\d+", spelling):
+        return int(spelling)
+    return float(spelling)
+
+
+def _boolean_from_spelling(spelling: str) -> bool:
+    return spelling == "+true"
 
 
 class _SxpbSyntaxError(SxpbParseError):
@@ -254,13 +277,13 @@ def _tokenize(text: str):
             if text.startswith("+true", pos) and (
                 pos + 5 == n or text[pos + 5] in _ATOM_END
             ):
-                yield _Token(BOOLEAN, True, line)
+                yield _Token(BOOLEAN, "+true", line)
                 pos += 5
                 continue
             if text.startswith("+false", pos) and (
                 pos + 6 == n or text[pos + 6] in _ATOM_END
             ):
-                yield _Token(BOOLEAN, False, line)
+                yield _Token(BOOLEAN, "+false", line)
                 pos += 6
                 continue
 
@@ -276,8 +299,7 @@ def _tokenize(text: str):
                 end += 1
             token = text[pos:end]
             if _RE_NUMBER.match(token):
-                val = int(token) if re.match(r"^[+-]?\d+$", token) else float(token)
-                yield _Token(NUMBER, (val, token), line)
+                yield _Token(NUMBER, token, line)
             elif _RE_BARE.match(token):
                 yield _Token(BARE, token, line)
             else:
@@ -475,13 +497,15 @@ def _parse_array_body(
             enter_string_mode()
             _parse_string_array_item(st, result)
         elif t.kind == NUMBER:
-            spelling = t.value[1]
-            result.append(spelling if string_mode else t.value[0])
+            spelling = t.value
+            value = spelling if string_mode else _number_from_spelling(spelling)
+            result.append(value)
             scalar_spellings[len(result) - 1] = spelling
             st.next()
         elif t.kind == BOOLEAN:
-            spelling = "+true" if t.value else "+false"
-            result.append(spelling if string_mode else t.value)
+            spelling = t.value
+            value = spelling if string_mode else _boolean_from_spelling(spelling)
+            result.append(value)
             scalar_spellings[len(result) - 1] = spelling
             st.next()
         else:
@@ -538,11 +562,8 @@ def _parse_string_array_item(st: _ParserState, result: SxpbList) -> None:
     elif t.kind in (BARE, PLAIN):
         result.append(t.value)
         st.next()
-    elif t.kind == NUMBER:
-        result.append(t.value[1])
-        st.next()
-    elif t.kind == BOOLEAN:
-        result.append("+true" if t.value else "+false")
+    elif t.kind in (NUMBER, BOOLEAN):
+        result.append(t.value)
         st.next()
 
 
@@ -592,10 +613,10 @@ def _parse_list_item(st: _ParserState) -> Any:
     t = st.peek()
     if t.kind == NUMBER:
         st.next()
-        return t.value[0]
+        return _number_from_spelling(t.value)
     if t.kind == BOOLEAN:
         st.next()
-        return t.value
+        return _boolean_from_spelling(t.value)
     if t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE):
         st.next()
         return t.value
@@ -684,16 +705,10 @@ def _parse_string_body(st: _ParserState, discriminated: bool = False) -> str:
         elif t.kind == STRING_DISCRIM:
             st.next()
             prev_was_unquoted = False
-        elif t.kind == NUMBER:
+        elif t.kind in (NUMBER, BOOLEAN):
             if prev_was_unquoted:
                 parts.append(" ")
-            parts.append(t.value[1])
-            st.next()
-            prev_was_unquoted = True
-        elif t.kind == BOOLEAN:
-            if prev_was_unquoted:
-                parts.append(" ")
-            parts.append("+true" if t.value else "+false")
+            parts.append(t.value)
             st.next()
             prev_was_unquoted = True
         else:
@@ -873,11 +888,11 @@ def _parse_field_value(st: _ParserState) -> Any:
 
     if t.kind == NUMBER:
         st.next()
-        return t.value[0]
+        return _number_from_spelling(t.value)
 
     if t.kind == BOOLEAN:
         st.next()
-        return t.value
+        return _boolean_from_spelling(t.value)
 
     if t.kind in (QUOTED_STRING, MULTILINE_STRING):
         return _parse_string_body(st)
@@ -925,7 +940,7 @@ def _parse_manyof_items(st: _ParserState) -> list[Any]:
 # ── nest ─────────────────────────────────────────────────────────────────────
 
 # nest_body: nest_item*
-# nest_item: nest_key | nest_subfield | discriminated_string_field
+# nest_item: nest_leaf | nest_subfield | discriminated_string_nest_subfield
 #            | anonymous_discriminated_string | anonymous_discriminated_nest
 
 
@@ -948,19 +963,38 @@ def _parse_nest_body(st: _ParserState) -> SxpbNest:
     return nest
 
 
+def _parse_subnest_name(st: _ParserState) -> str:
+    """Parse a subnest name without scalar conversion."""
+    t = st.next()
+    if t.kind in (QUOTED_STRING, MULTILINE_STRING):
+        return t.value
+    if t.kind not in (BARE, PLAIN, NUMBER, BOOLEAN):
+        raise _SxpbSyntaxError(
+            f"Expected subnest name, found {t.kind} ({t.value!r})", t.line
+        )
+
+    if _has_sxpb_special_prefix(t.value):
+        raise _SxpbSyntaxError(
+            "Unexpected special prefix of plain subnest name.", t.line
+        )
+    return t.value
+
+
 def _parse_nest_item(st: _ParserState) -> Any:
     """Parse a single nest item."""
     t = st.peek()
 
-    if t.kind in (BARE, PLAIN, QUOTED_STRING, MULTILINE_STRING):
-        # nest_key: a bare string key
+    if t.kind in (
+        BARE,
+        PLAIN,
+        NUMBER,
+        BOOLEAN,
+        QUOTED_STRING,
+        MULTILINE_STRING,
+    ):
+        # Every leaf token remains a string in nest context.
         st.next()
-        return str(t.value)
-
-    if t.kind == NUMBER:
-        # Treat numbers as string keys in nest context
-        st.next()
-        return t.value[1]
+        return t.value
 
     if t.kind == LPAREN:
         st.next()
@@ -971,7 +1005,7 @@ def _parse_nest_item(st: _ParserState) -> Any:
 
         if inner.kind == STRING_DISCRIM:
             # Could be:
-            #   - discriminated_string_field: (field_name "")
+            #   - discriminated_string_nest_subfield: (subnest_name "")
             #   - anonymous_discriminated_string: ("" ...)
             #   - anonymous_discriminated_nest: ("" ("") ...)
             #   - nest_subfield with STRING_DISCRIM before nest body
@@ -1002,10 +1036,10 @@ def _parse_nest_item(st: _ParserState) -> Any:
             st.expect(RPAREN)
             return SxpbLone({"": body})
 
-        # Regular nest_subfield: ( field_name nest_body )
-        # or: ( field_name NEST_DISCRIM nest_body )
-        # or: ( field_name "" string_body )
-        key = _parse_field_name(st)
+        # Regular nest_subfield: ( subnest_name nest_body )
+        # or: ( subnest_name NEST_DISCRIM nest_body )
+        # or: ( subnest_name "" string_body )
+        key = _parse_subnest_name(st)
 
         after_key = st.peek()
         if after_key.kind == RPAREN:

@@ -98,6 +98,99 @@ def test_parsers_agree_on_valid_sources(source, precise):
 
 
 @pytest.mark.parametrize(
+    "name",
+    [
+        "name",
+        "-",
+        ".",
+        "--",
+        "..",
+        "---",
+        "...",
+        "--+",
+        "..-",
+        "-name",
+        ".name",
+        "1",
+        "01",
+        "1.2",
+        ".5",
+        "-1",
+        "-0.5",
+        "-1e6",
+        "01.2300",
+        "1e9999",
+        "9007199254740993",
+        "-0.000000000000000000000000001",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_plain_subnest_names_match_fildesh_special_prefix_rule(parse_module, name):
+    source = f'(nest ("") ({name} leaf))'
+    assert parse_module.loads(source) == {"nest": [{name: ["leaf"]}]}
+
+
+@pytest.mark.parametrize(
+    ("spelling", "name"),
+    [
+        ('"+name"', "+name"),
+        ('"-.name"', "-.name"),
+        ('""".+name"""', ".+name"),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_quoted_subnest_names_bypass_special_prefix_rule(parse_module, spelling, name):
+    source = f'(nest ("") ({spelling} leaf))'
+    assert parse_module.loads(source) == {"nest": [{name: ["leaf"]}]}
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "+",
+        "+name",
+        "+1",
+        "+true",
+        "-+",
+        "-+name",
+        "-.",
+        "-.5",
+        ".+",
+        ".+name",
+        ".-",
+        ".-name",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_plain_subnest_names_reject_fildesh_special_prefixes(parse_module, spelling):
+    with pytest.raises(SxpbParseError):
+        parse_module.loads(f'(nest ("") ({spelling} leaf))')
+
+
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_special_prefixes_remain_valid_nest_leaf_strings(parse_module):
+    source = '(nest ("") +true +false +1 -.5 +name (child +value -.value))'
+    assert parse_module.loads(source) == {
+        "nest": [
+            "+true",
+            "+false",
+            "+1",
+            "-.5",
+            "+name",
+            {"child": ["+value", "-.value"]},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
     ("source", "expected"),
     [
         ("((choice) 1 (value 2))", {"choice": [{"": 1}, {"value": 2}]}),

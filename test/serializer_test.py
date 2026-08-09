@@ -198,6 +198,29 @@ def test_condensed_message_arrays_preserve_empty_elements():
         assert sxpb.loads(sxpb.dumps(precise, indent=-1), precise=True) == precise
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "01",
+        ".5",
+        "-1",
+        "01.2300",
+        "1e9999",
+        "9007199254740993",
+        "-0.000000000000000000000000001",
+        "+name",
+        "-.name",
+        ".+name",
+    ],
+)
+def test_subnest_name_roundtrip(name):
+    data = {"nest": sxpb.Nest([sxpb.Lone({name: sxpb.Nest(["leaf"])})])}
+
+    for indent in (1, 0, -1):
+        serialized = sxpb.dumps(data, indent=indent)
+        assert sxpb.loads(serialized, precise=True) == data
+
+
 def test_unicode_serialization():
     """Tests that Unicode characters are not escaped."""
     data = {"a": "你好"}
