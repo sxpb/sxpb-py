@@ -1,7 +1,8 @@
 ?start: message_body | discriminated_array | discriminated_dict | discriminated_manyof | discriminated_nest
 
-message_body: any_field*
-nonempty_message_body: any_field+
+message_body: message_item*
+nonempty_message_body: message_item+
+message_item: any_field | append_field
 discriminated_array: LIST_DISCRIM array_body
 discriminated_dict: DICT_DISCRIM message_body
 discriminated_manyof: LIST_DISCRIM any_field manyof_body
@@ -12,6 +13,7 @@ any_field: regular_field | loneof_field | manyof_field
 regular_field: "(" field_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 loneof_field:  "(" loneof_name (scalar_body | message_body | discriminated_array | discriminated_dict | discriminated_nest) ")"
 manyof_field: "(" ( field_name discriminated_manyof | "(" field_name ")" manyof_body ) ")"
+append_field: "(" "(" "+." field_name+ ")" LIST_DISCRIM append_item* ")"
 
 field_name: BARE | NONEMPTY_ESCAPED_STRING
 scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
@@ -56,6 +58,14 @@ discriminated_string_nest_subfield: "(" subnest_name discriminated_string ")"
 subnest_name: SUBNEST_PLAIN_NAME | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
 
+append_item: any_field
+           | empty_message
+           | anonymous_discriminated_message
+           | anonymous_discriminated_string
+           | ESCAPED_STRING
+           | MULTILINE_STRING
+           | APPEND_ATOM
+
 # Type discriminators: (), (()), (""), ""
 # We tolerate accidental blank space but not comments.
 DICT_DISCRIM: /\(\s*\)/
@@ -69,6 +79,7 @@ SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?(?![^ \t\n\v\
 # Keep this prefix logic in parity with Fildesh's has_sxpb_bare_prefix().
 BARE: /(--[^ \t\n\v\f\r;"()]*|\.\.[^ \t\n\v\f\r;"()]*|[-.]?[^-+.0123456789 \t\n\v\f\r;"()][^ \t\n\v\f\r;"()]*|-(?![^ \t\n\v\f\r;"()])|\.(?![^ \t\n\v\f\r;"()]))/
 PLAIN: /[^ \t\n\v\f\r;"()]+/
+APPEND_ATOM: /[^ \t\n\v\f\r;"()]+/
 # Keep this prefix logic the complement of Fildesh's has_sxpb_special_prefix().
 SUBNEST_PLAIN_NAME: /(?!\+|-[+.]|\.[+-])[^ \t\n\v\f\r;"()]+/
 

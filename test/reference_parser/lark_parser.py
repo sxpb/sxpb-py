@@ -1,6 +1,6 @@
 import json
 import re
-from collections import UserList
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Union
 
@@ -16,6 +16,10 @@ GRAMMAR = (Path(__file__).parent / "grammar.lark").read_text()
 LARK_GRAMMAR_PATH = str(Path(str(lark.__file__)).parent / "grammars")
 NUM_INT = re.compile(r"^[+-]?\d+$")
 NUM_FLOAT = re.compile(r"^[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?$")
+BARE_ATOM = re.compile(
+    r"^(?:--[^ \t\n\v\f\r;\"()]*|\.\.[^ \t\n\v\f\r;\"()]*|-|\.|"
+    r"[-.]?[^-+.0123456789 \t\n\v\f\r;\"()][^ \t\n\v\f\r;\"()]*)$"
+)
 
 Json = Union[dict[str, Any], list[Any], str, int, float, bool, None]
 
@@ -118,6 +122,16 @@ class UnquotedString(str):
     pass
 
 
+class PlainString(UnquotedString):
+    """A reserved-prefix atom accepted only after string context exists."""
+
+
+@dataclass
+class AppendOperation:
+    path: list[str]
+    items: list[Any]
+
+
 class ScalarAtom:
     """Parsed scalar value with source spelling retained for list reconciliation."""
 
@@ -179,12 +193,139 @@ def _normalize_manyof_body(items, *, kind=None):
     return SxpbMany(normalized)
 
 
+class _AppendElementNormalizer:
+    """Reconcile appended anonymous elements with an existing collection."""
+
+    def __init__(self, *, container: str) -> None:
+        self.container = container
+        self.kind: str | None = None
+        self.scalar_kind: str | None = None
+
+    @staticmethod
+    def _kinds(value):
+        if isinstance(value, (SxpbMesg, SxpbDict)):
+            return "message", None
+        if isinstance(value, str):
+            return "scalar", "string"
+        if isinstance(value, bool):
+            return "scalar", "bool"
+        if isinstance(value, (int, float)):
+            return "scalar", "number"
+        if isinstance(value, ScalarAtom):
+            scalar_kind = "bool" if isinstance(value.value, bool) else "number"
+            return "scalar", scalar_kind
+        raise SxpbParseError("Unsupported append element.")
+
+    def seed(self, value) -> None:
+        self.kind, self.scalar_kind = self._kinds(value)
+
+    def _accept_kinds(self, kind, scalar_kind) -> None:
+        if self.kind is None:
+            self.kind = kind
+        elif self.kind != kind:
+            message = (
+                f"Unexpected message {self.container} element."
+                if kind == "message"
+                else "Unexpected literal type."
+            )
+            raise SxpbParseError(message)
+        if kind == "scalar":
+            if self.scalar_kind is None:
+                self.scalar_kind = scalar_kind
+            elif self.scalar_kind == "string":
+                pass
+            elif self.scalar_kind == "bool" and scalar_kind == "number":
+                pass
+            elif self.scalar_kind != scalar_kind:
+                raise SxpbParseError("Unexpected literal type.")
+
+    def normalize(self, value):
+        kind, scalar_kind = self._kinds(value)
+        if self.kind is None and isinstance(value, PlainString):
+            raise SxpbParseError("A bare word cannot begin with a reserved prefix.")
+        self._accept_kinds(kind, scalar_kind)
+        if kind == "message":
+            return value
+        if self.scalar_kind == "string":
+            if isinstance(value, ScalarAtom):
+                return value.spelling
+            return str(value) if isinstance(value, UnquotedString) else value
+        if self.scalar_kind == "number":
+            if isinstance(value, ScalarAtom) and not isinstance(value.value, bool):
+                return value.value
+            raise SxpbParseError("Unexpected literal type.")
+        if isinstance(value, ScalarAtom):
+            if isinstance(value.value, bool):
+                return value.value
+            if (
+                isinstance(value.value, int)
+                and not value.spelling.startswith("-")
+                and value.value in (0, 1)
+            ):
+                return bool(value.value)
+            if isinstance(value.value, int):
+                raise SxpbParseError("Expected a bool, not an int.")
+        raise SxpbParseError("Unexpected literal type.")
+
+
+def _apply_append(message, operation):
+    target = message
+    for key in operation.path:
+        if not isinstance(target, (SxpbMesg, SxpbDict)):
+            raise SxpbParseError(
+                "Expected message or dict in append operation keypath."
+            )
+        if key not in target:
+            raise SxpbParseError("Unknown append target.")
+        target = target[key]
+
+    if not isinstance(target, SxpbMany) and type(target) is not SxpbList:
+        raise SxpbParseError("Expected append target to be an array or manyof.")
+
+    normalizer = _AppendElementNormalizer(
+        container="manyof" if isinstance(target, SxpbMany) else "array"
+    )
+    if isinstance(target, SxpbMany):
+        for element in reversed(target):
+            if isinstance(element, SxpbLone) and len(element) == 1:
+                key, value = next(iter(element.items()))
+                if key == "":
+                    normalizer.seed(value)
+                    break
+        appended = [
+            _as_manyof_element(item)
+            if isinstance(item, tuple)
+            else _as_manyof_element(normalizer.normalize(item))
+            for item in operation.items
+        ]
+    else:
+        if target:
+            normalizer.seed(target[0])
+        if any(isinstance(item, tuple) for item in operation.items):
+            raise SxpbParseError("Array cannot hold fields.")
+        appended = [normalizer.normalize(item) for item in operation.items]
+
+    target.extend(appended)
+
+
 class SexpTransformer(Transformer):
     def BARE(self, s):
         return UnquotedString(s.value)
 
     def PLAIN(self, s):
-        return UnquotedString(s.value)
+        return PlainString(s.value)
+
+    def APPEND_ATOM(self, atom):
+        spelling = atom.value
+        if spelling in ("+true", "+false"):
+            return ScalarAtom(spelling == "+true", spelling, atom.line)
+        if NUM_INT.match(spelling):
+            return ScalarAtom(int(spelling), spelling, atom.line)
+        if NUM_FLOAT.match(spelling):
+            return ScalarAtom(float(spelling), spelling, atom.line)
+        if BARE_ATOM.match(spelling):
+            return UnquotedString(spelling)
+        return PlainString(spelling)
 
     def SUBNEST_PLAIN_NAME(self, s):
         return str(s)
@@ -245,20 +386,37 @@ class SexpTransformer(Transformer):
 
     def message_body(self, fields):
         message = SxpbMesg()
-        for key, val in fields:
+        for field in fields:
+            if isinstance(field, AppendOperation):
+                _apply_append(message, field)
+                continue
+            key, val = field
             if key in message:
-                if not isinstance(message[key], UserList):
-                    message[key] = SxpbList([message[key]])
-                if isinstance(val, UserList):
-                    message[key].extend(val)
-                else:
-                    message[key].append(val)
-            else:
-                message[key] = val
+                raise SxpbParseError(
+                    "Duplicate field name. Use explicit append syntax for list fields."
+                )
+            message[key] = val
         return message
 
     def nonempty_message_body(self, fields):
         return self.message_body(fields)
+
+    def message_item(self, items):
+        return items[0]
+
+    def append_item(self, items):
+        return items[0]
+
+    def append_field(self, items):
+        discriminator_index = next(
+            i
+            for i, item in enumerate(items)
+            if isinstance(item, Token) and item.type == "LIST_DISCRIM"
+        )
+        return AppendOperation(
+            path=items[:discriminator_index],
+            items=items[discriminator_index + 1 :],
+        )
 
     @v_args(inline=True)
     def start(self, body):

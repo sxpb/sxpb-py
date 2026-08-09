@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections import UserList
 from typing import Any, Union, cast
 
 from .exceptions import SxpbParseError
@@ -467,6 +466,25 @@ class _ScalarListNormalizer:
     def string_first(self) -> bool:
         return self._kind == "string"
 
+    def seed(self, value: Any, token: _Token) -> None:
+        """Reconstruct the scalar kind from an existing collection element."""
+        if isinstance(value, str):
+            incoming_kind = "string"
+        elif isinstance(value, bool):
+            incoming_kind = "bool"
+        elif isinstance(value, (int, float)):
+            incoming_kind = "number"
+        else:
+            raise _SxpbSyntaxError(
+                "Inconsistent existing append target element types.", token.line
+            )
+        if self._kind is None:
+            self._kind = incoming_kind
+        elif self._kind != incoming_kind:
+            raise _SxpbSyntaxError(
+                "Inconsistent existing append target element types.", token.line
+            )
+
     def normalize(
         self,
         value: Any,
@@ -515,6 +533,19 @@ class _AnonymousListNormalizer:
     def string_first(self) -> bool:
         return self._kind == "scalar" and self._scalar.string_first
 
+    def seed(self, value: Any, token: _Token) -> None:
+        """Reconstruct the anonymous kind from an existing collection element."""
+        is_message = isinstance(value, (SxpbMesg, SxpbDict))
+        incoming_kind = "message" if is_message else "scalar"
+        if self._kind is None:
+            self._kind = incoming_kind
+        elif self._kind != incoming_kind:
+            raise _SxpbSyntaxError(
+                "Inconsistent existing append target element types.", token.line
+            )
+        if not is_message:
+            self._scalar.seed(value, token)
+
     def normalize(
         self,
         value: Any,
@@ -547,9 +578,11 @@ def _reject_reserved_array_string_starter(token: _Token) -> None:
 
 
 def _parse_array_body(
-    st: _ParserState, already_have_discriminators: bool = False
+    st: _ParserState,
+    already_have_discriminators: bool = False,
+    seed_value: Any = None,
 ) -> SxpbList:
-    """Parse an array, reconciling every element with its first element kind."""
+    """Parse array elements, optionally seeded by one existing element."""
     result = SxpbList()
     scalar_normalizer = _ScalarListNormalizer()
     array_kind: str | None = None
@@ -566,6 +599,14 @@ def _parse_array_body(
             raise _SxpbSyntaxError("Unexpected literal type.", token.line)
         array_kind = "scalar"
         result[-1] = scalar_normalizer.normalize(result[-1], token, spelling=spelling)
+
+    if seed_value is not None:
+        seed_token = st.peek()
+        if isinstance(seed_value, (SxpbMesg, SxpbDict)):
+            accept_message(seed_token)
+        else:
+            array_kind = "scalar"
+            scalar_normalizer.seed(seed_value, seed_token)
 
     while not st.at_end():
         t = st.peek()
@@ -876,10 +917,10 @@ def _parse_message_body(st: _ParserState, allow_empty: bool = False) -> SxpbMesg
         if t.kind == END:
             break
         if t.kind == LPAREN:
-            field = _parse_any_field(st)
+            field = _parse_any_field(st, msg)
             if field is not None:
                 key, value = field
-                _merge_field_into_message(msg, key, value)
+                _merge_field_into_message(msg, key, value, line=t.line)
         elif t.kind == DICT_DISCRIM:
             # Empty field? Skip or treat as empty dict field
             st.next()
@@ -892,33 +933,118 @@ def _parse_message_body(st: _ParserState, allow_empty: bool = False) -> SxpbMesg
     return msg
 
 
-def _merge_field_into_message(msg: SxpbDict | SxpbMesg, key: str, value: Any) -> None:
-    """Add a field to a message, accumulating duplicate keys into SxpbLists."""
+def _merge_field_into_message(
+    msg: SxpbDict | SxpbMesg,
+    key: str,
+    value: Any,
+    *,
+    line: int,
+) -> None:
+    """Add one uniquely named field to a message or dict."""
     if key in msg:
-        existing = msg[key]
-        if not isinstance(existing, UserList):
-            msg[key] = SxpbList([existing])
-        if isinstance(value, UserList):
-            msg[key].extend(value)
-        else:
-            msg[key].append(value)
+        raise _SxpbSyntaxError(
+            "Duplicate field name. Use explicit append syntax for list fields.",
+            line,
+        )
+    msg[key] = value
+
+
+def _is_append_operator(st: _ParserState) -> bool:
+    return (
+        st.peek().kind == LPAREN
+        and st.peek_ahead().kind == PLAIN
+        and st.peek_ahead().value == "+."
+    )
+
+
+def _resolve_append_target(
+    msg: SxpbDict | SxpbMesg,
+    path: list[str],
+    token: _Token,
+) -> SxpbList | SxpbMany:
+    current: Any = msg
+    for key in path:
+        if not isinstance(current, (SxpbMesg, SxpbDict)):
+            raise _SxpbSyntaxError(
+                "Expected message or dict in append operation keypath.",
+                token.line,
+            )
+        if key not in current:
+            raise _SxpbSyntaxError("Unknown append target.", token.line)
+        current = current[key]
+
+    if isinstance(current, SxpbMany):
+        return current
+    if type(current) is SxpbList:
+        return current
+    raise _SxpbSyntaxError(
+        "Expected append target to be an array or manyof.", token.line
+    )
+
+
+def _parse_append_field(
+    st: _ParserState,
+    msg: SxpbDict | SxpbMesg,
+) -> None:
+    """Parse ``((+. path...) (()) elements...)`` relative to ``msg``."""
+    st.expect(LPAREN)
+    operator = st.next()
+    if operator.kind != PLAIN or operator.value != "+.":
+        raise _SxpbSyntaxError("Expected append operator '+.'.", operator.line)
+
+    path: list[str] = []
+    while st.peek().kind not in (RPAREN, END):
+        path.append(_parse_field_name(st))
+    if not path:
+        raise _SxpbSyntaxError(
+            "Expected a field name in the append keypath.", operator.line
+        )
+    st.expect(RPAREN)
+
+    target = _resolve_append_target(msg, path, operator)
+    if st.peek().kind != LIST_DISCRIM:
+        raise _SxpbSyntaxError(
+            "Expected (()) discriminator before append elements.",
+            st.peek().line,
+        )
+    st.next()
+
+    if isinstance(target, SxpbMany):
+        normalizer = _AnonymousListNormalizer(container="manyof")
+        for element in reversed(target):
+            if not isinstance(element, SxpbLone) or len(element) != 1:
+                continue
+            key, value = next(iter(element.items()))
+            if key == "":
+                normalizer.seed(value, operator)
+                break
+        items = _parse_manyof_items(st, normalizer)
+        appended = [_as_manyof_element(item) for item in items]
     else:
-        msg[key] = value
+        seed_value = target[0] if target else None
+        appended = _parse_array_body(st, seed_value=seed_value)
+
+    target.extend(appended)
 
 
 # ── any_field ────────────────────────────────────────────────────────────────
+
 
 # any_field: regular_field | loneof_field | manyof_field
 #
 # All start with LPAREN, but we disambiguate after consuming the first field_name.
 
 
-def _parse_any_field(st: _ParserState) -> tuple[str, Any] | None:
-    """Parse a complete field: LPAREN ... RPAREN → (key, value).
-
-    ALWAYS consumes both LPAREN and RPAREN.
-    """
+def _parse_any_field(
+    st: _ParserState,
+    msg: SxpbDict | SxpbMesg,
+) -> tuple[str, Any] | None:
+    """Parse a field or apply an append operation in the current message."""
     st.expect(LPAREN)
+    if _is_append_operator(st):
+        _parse_append_field(st, msg)
+        st.expect(RPAREN)
+        return None
     result = _parse_any_field_content(st)
     st.expect(RPAREN)
     return result
@@ -1062,10 +1188,14 @@ def _parse_field_value(st: _ParserState) -> Any:
     )
 
 
-def _parse_manyof_items(st: _ParserState) -> list[Any]:
+def _parse_manyof_items(
+    st: _ParserState,
+    normalizer: _AnonymousListNormalizer | None = None,
+) -> list[Any]:
     """Parse a manyof body, ignoring named items during kind reconciliation."""
     items: list[Any] = []
-    normalizer = _AnonymousListNormalizer(container="manyof")
+    if normalizer is None:
+        normalizer = _AnonymousListNormalizer(container="manyof")
     while not st.at_end():
         t = st.peek()
         if t.kind in (RPAREN, END):

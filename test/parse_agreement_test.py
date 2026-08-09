@@ -433,6 +433,124 @@ def test_empty_string_item_boundaries(parse_module, source, expected):
 
 
 @pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "(m (a (()) 1 2 3))((+. m a) (()) 4 5 6)",
+            {"m": {"a": [1, 2, 3, 4, 5, 6]}},
+        ),
+        (
+            "(outer (m (a (()) 1)) ((+. m a) (()) 2))",
+            {"outer": {"m": {"a": [1, 2]}}},
+        ),
+        (
+            "(outer (d () (entry (a (()) 1))) ((+. d entry a) (()) 2))",
+            {"outer": {"d": {"entry": {"a": [1, 2]}}}},
+        ),
+        (
+            "(a (()) one)((+. a) (()) 02 +true)",
+            {"a": ["one", "02", "+true"]},
+        ),
+        (
+            "(a (()) +true)((+. a) (()) 00 +01 +false)",
+            {"a": [True, False, True, False]},
+        ),
+        (
+            "(a (()) (() (x 1)))((+. a) (()) () (() (x 2)))",
+            {"a": [{"x": 1}, {}, {"x": 2}]},
+        ),
+        (
+            "(messages (()) (() (a (()) 1) ((+. a) (()) 2)))",
+            {"messages": [{"a": [1, 2]}]},
+        ),
+        (
+            "(a (()))((+. a) (()) 1 2)((+. a) (()) 3)",
+            {"a": [1, 2, 3]},
+        ),
+        (
+            "(a (()) 1 2)((+. a) (()))",
+            {"a": [1, 2]},
+        ),
+        (
+            '("m m" ("a a" (()) 1))((+. "m m" "a a") (()) 2)',
+            {"m m": {"a a": [1, 2]}},
+        ),
+        (
+            "((m) (a 1) (b 2))((+. m) (()) (c 3) 4 5)",
+            {"m": [{"a": 1}, {"b": 2}, {"c": 3}, {"": 4}, {"": 5}]},
+        ),
+        (
+            "((m))((+. m) (()) (named 1) one 02 +true)",
+            {
+                "m": [
+                    {"named": 1},
+                    {"": "one"},
+                    {"": "02"},
+                    {"": "+true"},
+                ]
+            },
+        ),
+        (
+            "((m) (named 1))((+. m) (()) () (other 2) (() (x 3)))",
+            {
+                "m": [
+                    {"named": 1},
+                    {"": {}},
+                    {"other": 2},
+                    {"": {"x": 3}},
+                ]
+            },
+        ),
+        (
+            "(outer ((m) (named 1)) ((+. m) (()) 2 3))",
+            {"outer": {"m": [{"named": 1}, {"": 2}, {"": 3}]}},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_explicit_append_operations(parse_module, source, expected):
+    assert parse_module.loads(source, precise=True) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(a (()) 1)(a (()) 2)",
+        "((m) (a 1))((m) (b 2))",
+        "(x 1)(x 2)",
+        "(m (a (()) 1))((+. m missing) (()) 2)",
+        "((+. missing) (()) 1)",
+        "((+. later) (()) 1)(later (()))",
+        "(m (x 1))((+. m x) (()) 2)",
+        "(m (x 1))((+. m) (()) 2)",
+        "(d () (x 1))((+. d) (()) 2)",
+        "((choice option) 1)((+. choice) (()) 2)",
+        "(m (x 1))((+. m x y) (()) 2)",
+        "(m ((x choice) 1))((+. m x y) (()) 2)",
+        '(n ("") leaf)((+. n) (()) other)',
+        "(m (a (()) 1))((+. m a) 2)",
+        "(m (a (()) 1))((+.) (()) 2)",
+        "(a (()) 1)((+. a) (()) word)",
+        "(a (()) 1)((+. a) (()) +true)",
+        "(a (()) ())((+. a) (()) 1)",
+        "(a (()) 1)((+. a) (()) ())",
+        "(a (()))((+. a) (()) (named 1))",
+        "((m) 1)((+. m) (()) +true)",
+        "((m) ())((+. m) (()) 1)",
+        "((m))((+. m) (()) (()))",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_append_and_duplicate_field_failures(parse_module, source):
+    with pytest.raises(SxpbParseError):
+        parse_module.loads(source, precise=True)
+
+
+@pytest.mark.parametrize(
     "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
 )
 def test_plain_manyof_elements_use_value_name(parse_module):

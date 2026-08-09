@@ -2,6 +2,19 @@
 
 A small schema-agnostic parser and serializer for `.sxpb` files (S-expression protobuf data).
 
+## Explicit list appends
+
+Array and manyof fields have unique names like other message fields.
+Append elements with `((+. path...) (()) elements...)`; the path is relative to the message containing the operation and must resolve through existing message or dict keys to an existing array or manyof. Path segments use the usual bare or quoted field-name spelling.
+
+```sxpb
+(m (a (()) 1 2 3))
+((+. m a) (()) 4 5 6)
+```
+
+The `(())` before the appended elements is always required.
+Repeating `(m ...)` or `(a ...)` does not append implicitly and is rejected as a duplicate field.
+
 ## Setup
 
 ### PDM Prereq
