@@ -696,7 +696,7 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
         item = _parse_list_item(
             st,
             allow_plain=allow_plain,
-            empty_string_item=bool(items) and not is_manyof,
+            empty_string_item=bool(items),
         )
         if item is None:
             raise _SxpbSyntaxError("Unexpected list element.", t.line)
@@ -1073,7 +1073,11 @@ def _parse_manyof_items(st: _ParserState) -> list[Any]:
         if t.kind == PLAIN and not normalizer.string_first:
             _reject_reserved_array_string_starter(t)
 
-        item = _parse_list_item(st, allow_plain=normalizer.string_first)
+        item = _parse_list_item(
+            st,
+            allow_plain=normalizer.string_first,
+            empty_string_item=True,
+        )
         if item is None:
             raise _SxpbSyntaxError("Unexpected manyof element.", t.line)
         if not isinstance(item, (tuple, SxpbLone, SxpbMany)):
@@ -1221,8 +1225,10 @@ def _parse_nest_item(st: _ParserState) -> Any:
         return SxpbLone({key: body})
 
     if t.kind == STRING_DISCRIM:
-        # Anonymous discriminated string at nest top level
-        return _parse_discriminated_string(st)
+        # Bare ``""`` is one empty nest item. Parentheses retain the
+        # multiword discriminated-string form: ``("" words...)``.
+        st.next()
+        return ""
 
     if t.kind == NEST_DISCRIM:
         # Anonymous nest: ("") nest_body

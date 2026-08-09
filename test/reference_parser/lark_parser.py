@@ -204,6 +204,9 @@ class SexpTransformer(Transformer):
     def NONEMPTY_ESCAPED_STRING(self, s):
         return _decode_quoted_content(s.value[1:-1])
 
+    def EMPTY_STRING(self, _):
+        return ""
+
     def ESCAPED_STRING(self, s):
         return _decode_quoted_content(s.value[1:-1])
 
@@ -380,6 +383,9 @@ class SexpTransformer(Transformer):
     def nest_item(self, items):
         return items[0]
 
+    def nonempty_nest_item(self, items):
+        return items[0]
+
     @v_args(inline=True)
     def nest_leaf(self, leaf: str) -> str:
         if isinstance(leaf, UnquotedString):
@@ -387,10 +393,13 @@ class SexpTransformer(Transformer):
         return leaf
 
     def nest_subfield(self, items):
-        # items: [subnest_name, nest_body]
+        # items: [subnest_name, optional NEST_DISCRIM, subnest_body]
         key = items[0]
         body = items[-1]
         return SxpbLone({key: body})
+
+    def implicit_subnest_body(self, items):
+        return SxpbNest(items)
 
     def anonymous_discriminated_nest(self, items):
         # items: [NEST_DISCRIM, nest_body]

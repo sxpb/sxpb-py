@@ -377,6 +377,9 @@ def test_first_anonymous_controls_manyof_elements(parse_module, source, expected
         "((choice) () (named 1) one)",
         "((choice) 1 (named word) (() (x 2)))",
         "((choice) (() (x 1)) (named word) 2)",
+        '((choice) 1 "")',
+        '((choice) "" ())',
+        '((choice) (""))',
         "((choice) (()))",
         "(()) (named word) one (middle +true) (())",
         "(()) (named word) 1 (middle +true) +false",
@@ -388,6 +391,45 @@ def test_first_anonymous_controls_manyof_elements(parse_module, source, expected
 def test_manyofs_reject_incompatible_anonymous_kinds(parse_module, source):
     with pytest.raises(SxpbParseError):
         parse_module.loads(source)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ('("") "" tail', ["", "tail"]),
+        ('(nest ("") "" tail)', {"nest": ["", "tail"]}),
+        ('(my_nest ("") (my_subnest))', {"my_nest": [{"my_subnest": []}]}),
+        (
+            '(my_nest ("") (my_subnest ("") "" three leaves))',
+            {"my_nest": [{"my_subnest": ["", "three", "leaves"]}]},
+        ),
+        (
+            '(my_nest ("") (my_subnest "" this is one discriminated string))',
+            {"my_nest": [{"my_subnest": ["this is one discriminated string"]}]},
+        ),
+        (
+            '(my_nest ("") (my_subnest ""))',
+            {"my_nest": [{"my_subnest": [""]}]},
+        ),
+        (
+            '((choice) "" 02 +true)',
+            {"choice": [{"": ""}, {"": "02"}, {"": "+true"}]},
+        ),
+        (
+            '(()) (named 1) "" tail',
+            [{"named": 1}, {"": ""}, {"": "tail"}],
+        ),
+        (
+            '((choice) ("" two words) "" tail)',
+            {"choice": [{"": "two words"}, {"": ""}, {"": "tail"}]},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_empty_string_item_boundaries(parse_module, source, expected):
+    assert parse_module.loads(source, precise=True) == expected
 
 
 @pytest.mark.parametrize(

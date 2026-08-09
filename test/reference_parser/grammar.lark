@@ -47,9 +47,11 @@ boolean_manyof_body: any_field* BOOLEAN boolean_manyof_tail*
 boolean_manyof_tail: any_field | BOOLEAN | SIGNED_NUMBER
 
 nest_body: nest_item*
-nest_item: nest_leaf | nest_subfield | discriminated_string_nest_subfield | anonymous_discriminated_string | anonymous_discriminated_nest
+nest_item: nonempty_nest_item | EMPTY_STRING
+nonempty_nest_item: nest_leaf | nest_subfield | discriminated_string_nest_subfield | anonymous_discriminated_string | anonymous_discriminated_nest
 nest_leaf: PLAIN | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
-nest_subfield: "(" subnest_name NEST_DISCRIM? nest_body ")"
+nest_subfield: "(" subnest_name (implicit_subnest_body | NEST_DISCRIM nest_body) ")"
+implicit_subnest_body: (nonempty_nest_item nest_item*)?
 discriminated_string_nest_subfield: "(" subnest_name discriminated_string ")"
 subnest_name: SUBNEST_PLAIN_NAME | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
 anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
