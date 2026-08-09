@@ -457,25 +457,80 @@ def _parse_discriminated_list(st: _ParserState, stop_kind: str = END) -> Any:
         return SxpbList()
 
 
+class _ScalarListNormalizer:
+    """Reconcile scalar elements using the first element's literal kind."""
+
+    def __init__(self) -> None:
+        self._kind: str | None = None
+
+    @property
+    def string_first(self) -> bool:
+        return self._kind == "string"
+
+    def normalize(
+        self,
+        value: Any,
+        token: _Token,
+        *,
+        spelling: str | None = None,
+    ) -> Any:
+        if self._kind is None:
+            if isinstance(value, str):
+                self._kind = "string"
+            elif isinstance(value, bool):
+                self._kind = "bool"
+            else:
+                self._kind = "number"
+
+        if self._kind == "string":
+            return spelling if spelling is not None else value
+
+        if self._kind == "number":
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+            raise _SxpbSyntaxError("Unexpected literal type.", token.line)
+
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            if (
+                spelling is not None
+                and not spelling.startswith("-")
+                and value in (0, 1)
+            ):
+                return bool(value)
+            raise _SxpbSyntaxError("Expected a bool, not an int.", token.line)
+        raise _SxpbSyntaxError("Unexpected literal type.", token.line)
+
+
+def _reject_reserved_array_string_starter(token: _Token) -> None:
+    """Reject a PLAIN atom until a first string establishes string context."""
+    raise _SxpbSyntaxError(
+        f"A bare word cannot begin with a reserved prefix (got {token.value!r}).",
+        token.line,
+    )
+
+
 def _parse_array_body(
     st: _ParserState, already_have_discriminators: bool = False
 ) -> SxpbList:
-    """array_body: message_array_body | SIGNED_NUMBER* | BOOLEAN* | string_array_body.
-
-    Called after LIST_DISCRIM has been consumed (already_have_discriminators=True)
-    or inside a regular_field context.
-    """
+    """Parse an array, reconciling every element with its first element kind."""
     result = SxpbList()
-    string_mode = False
-    scalar_spellings: dict[int, str] = {}
+    scalar_normalizer = _ScalarListNormalizer()
+    array_kind: str | None = None
 
-    def enter_string_mode() -> None:
-        nonlocal string_mode
-        if string_mode:
-            return
-        string_mode = True
-        for index, spelling in scalar_spellings.items():
-            result[index] = spelling
+    def accept_message(token: _Token) -> None:
+        nonlocal array_kind
+        if array_kind == "scalar":
+            raise _SxpbSyntaxError("Unexpected message array element.", token.line)
+        array_kind = "message"
+
+    def accept_scalar(token: _Token, *, spelling: str | None = None) -> None:
+        nonlocal array_kind
+        if array_kind == "message":
+            raise _SxpbSyntaxError("Unexpected literal type.", token.line)
+        array_kind = "scalar"
+        result[-1] = scalar_normalizer.normalize(result[-1], token, spelling=spelling)
 
     while not st.at_end():
         t = st.peek()
@@ -485,28 +540,38 @@ def _parse_array_body(
             break
 
         if t.kind == DICT_DISCRIM:
-            # empty_message or start of anonymous_discriminated_message
+            accept_message(t)
             _parse_message_array_item(st, result)
         elif t.kind == LPAREN:
             # anonymous_discriminated_message or anonymous_discriminated_string
             _parse_message_array_item(st, result)
+            if isinstance(result[-1], str):
+                accept_scalar(t)
+            else:
+                accept_message(t)
         elif t.kind == STRING_DISCRIM:
-            enter_string_mode()
+            # Inside an array, bare ``""`` is one empty string element.
+            # Parenthesized ``("" words...)`` remains discriminated and greedy.
+            st.next()
+            result.append("")
+            accept_scalar(t)
+        elif t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE):
             _parse_string_array_item(st, result)
-        elif t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE, PLAIN):
-            enter_string_mode()
+            accept_scalar(t)
+        elif t.kind == PLAIN:
+            if not scalar_normalizer.string_first:
+                _reject_reserved_array_string_starter(t)
             _parse_string_array_item(st, result)
+            accept_scalar(t)
         elif t.kind == NUMBER:
             spelling = t.value
-            value = spelling if string_mode else _number_from_spelling(spelling)
-            result.append(value)
-            scalar_spellings[len(result) - 1] = spelling
+            result.append(_number_from_spelling(spelling))
+            accept_scalar(t, spelling=spelling)
             st.next()
         elif t.kind == BOOLEAN:
             spelling = t.value
-            value = spelling if string_mode else _boolean_from_spelling(spelling)
-            result.append(value)
-            scalar_spellings[len(result) - 1] = spelling
+            result.append(_boolean_from_spelling(spelling))
+            accept_scalar(t, spelling=spelling)
             st.next()
         else:
             break
@@ -574,6 +639,9 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
     change that choice.  stop_kind is END at top level and RPAREN in a field.
     """
     items: list[Any] = []
+    scalar_normalizer = _ScalarListNormalizer()
+    is_manyof = False
+    array_kind: str | None = None
 
     while not st.at_end():
         t = st.peek()
@@ -581,17 +649,47 @@ def _parse_discriminated_list_content(st: _ParserState, stop_kind: str = END) ->
             break
         if t.kind == RPAREN and stop_kind == RPAREN:
             break
+        if t.kind == PLAIN and not (
+            not is_manyof and array_kind == "scalar" and scalar_normalizer.string_first
+        ):
+            _reject_reserved_array_string_starter(t)
 
-        item = _parse_list_item(st)
+        item = _parse_list_item(
+            st,
+            allow_plain=(
+                not is_manyof
+                and array_kind == "scalar"
+                and scalar_normalizer.string_first
+            ),
+            empty_string_item=bool(items) and not is_manyof,
+        )
         if item is None:
             break
+
+        is_named = isinstance(item, (tuple, SxpbLone, SxpbMany))
+        is_anon_message = isinstance(item, (SxpbMesg, SxpbDict))
+        if not items:
+            is_manyof = is_named
+        if is_manyof:
+            items.append(item)
+            continue
+        if is_named:
+            raise _SxpbSyntaxError("Array cannot hold fields.", t.line)
+        if is_anon_message:
+            if array_kind == "scalar":
+                raise _SxpbSyntaxError("Unexpected message array element.", t.line)
+            array_kind = "message"
+        else:
+            if array_kind == "message":
+                raise _SxpbSyntaxError("Unexpected literal type.", t.line)
+            array_kind = "scalar"
+            spelling = t.value if t.kind in (NUMBER, BOOLEAN) else None
+            item = scalar_normalizer.normalize(item, t, spelling=spelling)
         items.append(item)
 
     if not items:
         return SxpbList()
-
-    first_is_named = isinstance(items[0], (tuple, SxpbLone, SxpbMany))
-    if not first_is_named:
+    if not is_manyof:
         return SxpbList(items)
 
     return SxpbMany([_as_manyof_element(item) for item in items])
@@ -605,11 +703,13 @@ def _as_manyof_element(item: Any) -> Any:
     return SxpbLone({"": item})
 
 
-def _parse_list_item(st: _ParserState) -> Any:
-    """list_item: SIGNED_NUMBER | BOOLEAN | ESCAPED_STRING | MULTILINE_STRING
-    | BARE | PLAIN | empty_message | anonymous_discriminated_message
-    | anonymous_discriminated_string | any_field.
-    """
+def _parse_list_item(
+    st: _ParserState,
+    *,
+    allow_plain: bool = False,
+    empty_string_item: bool = False,
+) -> Any:
+    """Parse one list/manyof item with caller-selected string boundaries."""
     t = st.peek()
     if t.kind == NUMBER:
         st.next()
@@ -620,8 +720,14 @@ def _parse_list_item(st: _ParserState) -> Any:
     if t.kind in (QUOTED_STRING, MULTILINE_STRING, BARE):
         st.next()
         return t.value
+    if t.kind == PLAIN and allow_plain:
+        st.next()
+        return t.value
     if t.kind == STRING_DISCRIM:
-        # anonymous_discriminated_string or bare string in array
+        if empty_string_item:
+            st.next()
+            return ""
+        # Outside an established array, this begins a discriminated string.
         return _parse_discriminated_string(st)
     if t.kind == LPAREN:
         st.next()

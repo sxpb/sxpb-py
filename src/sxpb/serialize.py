@@ -413,7 +413,43 @@ def _serialize_field(key: str, value: Any, indent: int, level: int) -> str:
     return f"{pad}({key}{_serialize_field_body(value, indent, level)})"
 
 
+def _array_element_kind(item: Any) -> str | None:
+    if isinstance(item, Mapping):
+        return "message"
+    if isinstance(item, str):
+        return "string"
+    if isinstance(item, bool):
+        return "boolean"
+    if isinstance(item, (int, float)):
+        return "number"
+    return None
+
+
+def _validate_array_elements(lst: Sequence) -> None:
+    if not lst:
+        return
+
+    first_kind = _array_element_kind(lst[0])
+    if first_kind is None:
+        raise TypeError(f"Unsupported first array element: {type(lst[0]).__name__}")
+
+    for index, item in enumerate(lst[1:], 1):
+        item_kind = _array_element_kind(item)
+        compatible = item_kind == first_kind
+        if first_kind == "string":
+            compatible = item_kind in ("string", "number", "boolean")
+        elif first_kind == "boolean" and item_kind == "number":
+            compatible = (
+                isinstance(item, int) and not isinstance(item, bool) and item in (0, 1)
+            )
+        if not compatible:
+            raise TypeError(
+                f"Array element {index} is incompatible with a {first_kind}-first array"
+            )
+
+
 def _serialize_list_body(lst: Sequence, indent: int, level: int) -> str:
+    _validate_array_elements(lst)
     is_message_array = lst and isinstance(lst[0], Mapping)
 
     if is_message_array and indent < 0:

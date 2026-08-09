@@ -16,11 +16,15 @@ field_name: BARE | NONEMPTY_ESCAPED_STRING
 scalar_body: SIGNED_NUMBER | BOOLEAN | string_body
 string_body: (ESCAPED_STRING | MULTILINE_STRING | BARE) (ESCAPED_STRING | MULTILINE_STRING | PLAIN)*
 
-array_body: message_array_body | SIGNED_NUMBER* | BOOLEAN* | string_array_body
+array_body: message_array_body | string_array_body | number_array_body | boolean_array_body
 message_array_body: (empty_message | anonymous_discriminated_message)*
 empty_message: DICT_DISCRIM
 anonymous_discriminated_message: "(" DICT_DISCRIM message_body ")"
-string_array_body: (ESCAPED_STRING | MULTILINE_STRING | BARE | PLAIN | anonymous_discriminated_string)*
+string_array_body: string_array_starter string_array_item*
+string_array_starter: ESCAPED_STRING | MULTILINE_STRING | BARE | anonymous_discriminated_string
+string_array_item: ESCAPED_STRING | MULTILINE_STRING | PLAIN | anonymous_discriminated_string
+number_array_body: SIGNED_NUMBER+
+boolean_array_body: BOOLEAN (BOOLEAN | SIGNED_NUMBER)*
 anonymous_discriminated_string: "(" STRING_DISCRIM (ESCAPED_STRING | MULTILINE_STRING | PLAIN)+ ")"
 
 loneof_name: "(" field_name field_name ")"
@@ -42,9 +46,9 @@ LIST_DISCRIM: /\(\s*\(\s*\)\s*\)/
 NEST_DISCRIM: /\(\s*""\s*\)/
 STRING_DISCRIM: /""(?!")/
 
-BOOLEAN: /\+true|\+false/
-
-SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?/
+# Literals end at an atom boundary: (?![^ \t\n\v\f\r;"()])
+BOOLEAN: /(?:\+true|\+false)(?![^ \t\n\v\f\r;"()])/
+SIGNED_NUMBER: /[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?(?![^ \t\n\v\f\r;"()])/
 # Keep this prefix logic in parity with Fildesh's has_sxpb_bare_prefix().
 BARE: /(--[^ \t\n\v\f\r;"()]*|\.\.[^ \t\n\v\f\r;"()]*|[-.]?[^-+.0123456789 \t\n\v\f\r;"()][^ \t\n\v\f\r;"()]*|-(?![^ \t\n\v\f\r;"()])|\.(?![^ \t\n\v\f\r;"()]))/
 PLAIN: /[^ \t\n\v\f\r;"()]+/

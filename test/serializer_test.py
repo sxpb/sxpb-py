@@ -38,6 +38,25 @@ def test_array_serialization_with_indents():
     assert sxpb.dumps(data, indent=-1) == expected_condensed
 
 
+def test_array_serialization_reconciles_first_element_kind():
+    string_first = {"a": ["one", 2, True]}
+    assert sxpb.loads(sxpb.dumps(string_first)) == {"a": ["one", "2", "+true"]}
+
+    bool_first = {"a": [True, 0, 1, False]}
+    assert sxpb.loads(sxpb.dumps(bool_first)) == {"a": [True, False, True, False]}
+
+    for values in [
+        [1, "one"],
+        [1, True],
+        [True, 2],
+        [True, 0.0],
+        [1, {}],
+        [{}, 1],
+    ]:
+        with pytest.raises(TypeError, match="incompatible"):
+            sxpb.dumps({"a": values})
+
+
 def test_top_level_manyof_serialization():
     """Tests top-level manyof (SxpbMany) serialization with different indents."""
     data = sxpb.Many([{"a": 1}, {"b": 2}])

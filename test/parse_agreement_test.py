@@ -16,6 +16,12 @@ VALID_SOURCES = [
     "(a 1e+6)",
     "(a +1e6)",
     "(a 1E3)",
+    "(a (()) one 02 +03 4.0 +true)",
+    "(a (()) 1 2.5 3)",
+    "(a (()) +true 00 +01 +false)",
+    '(a (()) "" one 02 +true)',
+    "(()) one 02 +true",
+    '(()) ("" one) 2 +true',
     "() (a 1)",
     "( ) (a 1)",
     "(( )) 1 2",
@@ -26,7 +32,6 @@ VALID_SOURCES = [
     '(a"adjacent quoted value")',
     '(a "" one two)',
     "(a (()) 1 2)",
-    "(a (()) 1. word +true)",
     "(a (()) word 1. +true)",
     "(a ( ( ) ) 1 2)",
     "((kind option) (x 1))",
@@ -192,6 +197,90 @@ def test_special_prefixes_remain_valid_nest_leaf_strings(parse_module):
             {"child": ["+value", "-.value"]},
         ]
     }
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "(a (()) one 02 +03 4.0 +true)",
+            {"a": ["one", "02", "+03", "4.0", "+true"]},
+        ),
+        ('(a (()) "one" 2 +true)', {"a": ["one", "2", "+true"]}),
+        ('(a (()) ("" one) 2 +true)', {"a": ["one", "2", "+true"]}),
+        ('(a (()) "" one 02 +true)', {"a": ["", "one", "02", "+true"]}),
+        ("(()) one 02 +true", ["one", "02", "+true"]),
+        ('(()) ("" one) 2 +true', ["one", "2", "+true"]),
+        ("(a (()) 1 2.5 3)", {"a": [1, 2.5, 3]}),
+        (
+            "(a (()) +true 00 +01 +false)",
+            {"a": [True, False, True, False]},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_first_scalar_controls_array_string_conversion(parse_module, source, expected):
+    assert _type_snapshot(parse_module.loads(source)) == _type_snapshot(expected)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(a (()) +truex)",
+        "(a (()) -.x)",
+        "(a (()) 1x)",
+        "(a (()) 1 +truex)",
+        "(a (()) 1 1x)",
+        "(a (()) 1 one +truex)",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_reserved_prefix_array_strings_require_string_first_context(
+    parse_module, source
+):
+    with pytest.raises(SxpbParseError):
+        parse_module.loads(source)
+
+
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_string_first_array_allows_reserved_prefix_continuations(parse_module):
+    source = "(a (()) one +truex -.x)"
+    assert parse_module.loads(source) == {"a": ["one", "+truex", "-.x"]}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '(a (()) 1 "word")',
+        "(a (()) 1 word)",
+        '(a (()) 1 ("" word))',
+        '(a (()) 1 "")',
+        "(a (()) 1 +true)",
+        "(a (()) +true word)",
+        "(a (()) +true 2)",
+        "(a (()) +true -0)",
+        "(a (()) +true 0.0)",
+        "(a (()) 1 ())",
+        "(a (()) () 1)",
+        "(a (()) 1 (() (x 2)))",
+        "(a (()) (() (x 2)) 1)",
+        '(a (()) ("" word) ())',
+        '(a (()) (() (x 2)) ("" word))',
+        "(a (()) 1 (x 2))",
+    ],
+)
+@pytest.mark.parametrize(
+    "parse_module", [lark_parser, hand_parse], ids=["lark", "hand"]
+)
+def test_arrays_reject_incompatible_element_kinds(parse_module, source):
+    with pytest.raises(SxpbParseError):
+        parse_module.loads(source)
 
 
 @pytest.mark.parametrize(

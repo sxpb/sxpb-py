@@ -118,6 +118,41 @@ class UnquotedString(str):
     pass
 
 
+class ScalarAtom:
+    """Parsed scalar value with source spelling retained for list reconciliation."""
+
+    def __init__(self, value: int | float | bool, spelling: str, line: int) -> None:
+        self.value = value
+        self.spelling = spelling
+        self.line = line
+
+
+def _normalize_scalar_list(items, *, kind):
+    """Reconcile scalar elements using the first element's literal kind."""
+    normalized = []
+    for item in items:
+        if not isinstance(item, ScalarAtom):
+            normalized.append(str(item) if isinstance(item, UnquotedString) else item)
+            continue
+        if kind == "string":
+            normalized.append(item.spelling)
+        elif kind == "number":
+            normalized.append(item.value)
+        elif isinstance(item.value, bool):
+            normalized.append(item.value)
+        elif (
+            isinstance(item.value, int)
+            and not item.spelling.startswith("-")
+            and item.value in (0, 1)
+        ):
+            normalized.append(bool(item.value))
+        elif isinstance(item.value, int):
+            raise SxpbParseError(f"Line {item.line}: Expected a bool, not an int.")
+        else:
+            raise SxpbParseError(f"Line {item.line}: Unexpected literal type.")
+    return SxpbList(normalized)
+
+
 def _as_manyof_element(item: Any) -> Any:
     if isinstance(item, tuple):
         return SxpbLone({item[0]: item[1]})
@@ -138,14 +173,14 @@ class SexpTransformer(Transformer):
 
     @v_args(inline=True)
     def BOOLEAN(self, b):
-        return b.value == "+true"
+        return ScalarAtom(b.value == "+true", b.value, b.line)
 
     @v_args(inline=True)
     def SIGNED_NUMBER(self, n):
         if NUM_INT.match(n.value):
-            return int(n.value)
+            return ScalarAtom(int(n.value), n.value, n.line)
         if NUM_FLOAT.match(n.value):
-            return float(n.value)
+            return ScalarAtom(float(n.value), n.value, n.line)
         return n.value
 
     def NONEMPTY_ESCAPED_STRING(self, s):
@@ -159,6 +194,8 @@ class SexpTransformer(Transformer):
 
     @v_args(inline=True)
     def manyof_item(self, a):
+        if isinstance(a, ScalarAtom):
+            return a.value
         if isinstance(a, UnquotedString):
             return str(a)
         return a
@@ -187,6 +224,8 @@ class SexpTransformer(Transformer):
 
     def scalar_body(self, items):
         val = items[0]
+        if isinstance(val, ScalarAtom):
+            return val.value
         if isinstance(val, UnquotedString):
             return str(val)
         return val
@@ -273,34 +312,28 @@ class SexpTransformer(Transformer):
     def anonymous_discriminated_string(self, items):
         return self.string_body(items[1:])
 
+    def string_array_starter(self, items):
+        return items[0]
+
+    def string_array_item(self, items):
+        return items[0]
+
     def string_array_body(self, items):
-        # The transformer has already processed the terminal tokens into strings or UnquotedString objects.
-        # Per the project's requirements, if any element in an array is a string, all elements are converted to strings.
-        # Since all children of the `string_array_body` rule are string-like, we just convert them all.
-        return SxpbList([str(item) for item in items])
+        return _normalize_scalar_list(items, kind="string")
+
+    def number_array_body(self, items):
+        return _normalize_scalar_list(items, kind="number")
+
+    def boolean_array_body(self, items):
+        return _normalize_scalar_list(items, kind="bool")
 
     def discriminated_array(self, items):
         # items[0] is LIST_DISCRIM, items[1] is array_body result
         return items[1]
 
     def array_body(self, items):
-        # The items will either be:
-        # 1. A single SxpbList from message_array_body
-        # 2. A single SxpbList from string_array_body
-        # 3. A list of numbers or booleans (directly in items)
-
         if items and isinstance(items[0], SxpbList):
-            # Case 1 or 2
             return items[0]
-
-        # Case 3 (or empty fallthrough)
-        if items and isinstance(items[0], Token) and items[0].type == "SIGNED_NUMBER":
-            return SxpbList([self.SIGNED_NUMBER(i) for i in items])
-        if items and isinstance(items[0], Token) and items[0].type == "BOOLEAN":
-            return SxpbList([self.BOOLEAN(i) for i in items])
-
-        # Fallback for empty array or heterogenous (if grammar allowed it, which it doesn't really)
-        # If empty, items is empty list here.
         return SxpbList(items)
 
     def discriminated_nest(self, items):
