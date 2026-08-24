@@ -56,7 +56,9 @@ nest_subfield: "(" subnest_name (implicit_subnest_body | NEST_DISCRIM nest_body)
 implicit_subnest_body: (nonempty_nest_item nest_item*)?
 discriminated_string_nest_subfield: "(" subnest_name discriminated_string ")"
 subnest_name: SUBNEST_PLAIN_NAME | NONEMPTY_ESCAPED_STRING | MULTILINE_STRING
-anonymous_discriminated_nest: "(" STRING_DISCRIM? NEST_DISCRIM nest_body ")"
+anonymous_discriminated_nest: "(" STRING_DISCRIM NEST_DISCRIM nest_body ")"
+                             | "(" NEST_DISCRIM nonempty_nest_body ")"
+nonempty_nest_body: nest_item+
 
 append_item: any_field
            | empty_message

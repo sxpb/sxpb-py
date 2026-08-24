@@ -160,3 +160,19 @@ def test_toplevel_nest():
 
     loaded = parse.loads(serialized, precise=True)
     assert loaded == data
+
+
+def test_empty_anonymous_subnest_requires_discriminator_prefix():
+    """Require the canonical ("" ("") ...) empty anonymous subnest form."""
+    with pytest.raises(SxpbParseError):
+        parse.loads('(n ("") (("")))', precise=True)
+    with pytest.raises(SxpbParseError):
+        parse.loads('(n ("") (("") ))', precise=True)
+    # The prefixed form is legal and round-trips.
+    data = parse.loads('(n ("") ("" ("")))', precise=True)
+    assert isinstance(data, SxpbMesg)
+    assert data["n"] == SxpbNest([{"": SxpbNest([])}])
+    # The non-empty wrapped form stays legal.
+    data = parse.loads('(n ("") (("") x))', precise=True)
+    assert isinstance(data, SxpbMesg)
+    assert data["n"] == SxpbNest([{"": SxpbNest(["x"])}])

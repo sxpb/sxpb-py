@@ -538,6 +538,9 @@ class SexpTransformer(Transformer):
     def nest_body(self, items):
         return SxpbNest(items)
 
+    def nonempty_nest_body(self, items):
+        return SxpbNest(items)
+
     def nest_item(self, items):
         return items[0]
 

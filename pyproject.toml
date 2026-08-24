@@ -41,6 +41,10 @@ dev = [
 package-dir = "src"
 
 [tool.pytest.ini_options]
+addopts = [
+    "-q",
+    "--import-mode=importlib",
+]
 pythonpath = ["src", "test"]
 testpaths = ["test"]
 
@@ -52,7 +56,7 @@ tidy-python = "ruff format"
 tidy-sxpb = "sxpb-tidy --ignore-file .gitignore"
 tidy = {composite = ["tidy-python", "tidy-sxpb"]}
 lint = {composite = ["check-format", "check-type", "lint-sxpb"]}
-test = "pytest -q"
+test = "pytest"
 tidytest = {composite = ["tidy", "lint", "test"]}
 
 [tool.ty.environment]

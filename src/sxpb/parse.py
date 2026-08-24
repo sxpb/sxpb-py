@@ -922,8 +922,10 @@ def _parse_message_body(st: _ParserState, allow_empty: bool = False) -> SxpbMesg
                 key, value = field
                 _merge_field_into_message(msg, key, value, line=t.line)
         elif t.kind == DICT_DISCRIM:
-            # Empty field? Skip or treat as empty dict field
-            st.next()
+            raise _SxpbSyntaxError(
+                "Unexpected empty message '()' where a field was expected.",
+                t.line,
+            )
         else:
             raise _SxpbSyntaxError(
                 f"Unexpected token outside field: {t.kind} ({t.value!r})",
@@ -1128,10 +1130,6 @@ def _parse_field_value(st: _ParserState) -> Any:
         # Peek at token AFTER LPAREN to identify the value type without consuming.
         inner = st.peek_ahead(1)
 
-        if inner.kind == LIST_DISCRIM:
-            st.next()  # consume LPAREN, leaving LIST_DISCRIM for _parse_discriminated_list
-            return _parse_discriminated_list(st, stop_kind=RPAREN)
-
         if inner.kind == DICT_DISCRIM:
             st.next()  # consume LPAREN
             st.next()  # consume DICT_DISCRIM
@@ -1314,6 +1312,11 @@ def _parse_nest_item(st: _ParserState) -> Any:
             st.next()  # consume NEST_DISCRIM
             body = _parse_nest_body(st)
             st.expect(RPAREN)
+            if len(body) == 0:
+                raise _SxpbSyntaxError(
+                    'Empty anonymous subnests must use the ("" ("") ...) form.',
+                    t.line,
+                )
             return SxpbLone({"": body})
 
         # Regular nest_subfield: ( subnest_name nest_body )
@@ -1361,9 +1364,10 @@ def _parse_nest_item(st: _ParserState) -> Any:
         return ""
 
     if t.kind == NEST_DISCRIM:
-        # Anonymous nest: ("") nest_body
-        st.next()
-        return _parse_nest_body(st)
+        # A bare ("") inside a nest body is not a valid nest item;
+        # anonymous nests must be wrapped
+        # like (("") nest_body) or ("" ("") optional_nest_body).
+        return None
 
     return None
 
